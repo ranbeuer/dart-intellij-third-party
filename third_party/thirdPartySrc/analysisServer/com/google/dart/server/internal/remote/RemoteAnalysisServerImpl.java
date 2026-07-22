@@ -425,11 +425,6 @@ public abstract class RemoteAnalysisServerImpl implements AnalysisServer {
   }
 
   @Override
-  public void completion_registerLibraryPaths(List<LibraryPathSet> paths) {
-    // this call is now deprecated in the Analysis Server, a future syncs with the protocol will remove this method
-  }
-
-  @Override
   public void completion_getSuggestionDetails(String file, int id, String label, int offset, GetSuggestionDetailsConsumer consumer) {
     String requestId = generateUniqueId();
     sendRequestToServer(requestId, RequestUtilities.generateCompletionGetSuggestionDetails(requestId, file, id, label, offset), consumer);
