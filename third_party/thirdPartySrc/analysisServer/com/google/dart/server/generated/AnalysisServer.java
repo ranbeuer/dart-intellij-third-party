@@ -454,24 +454,6 @@ public interface AnalysisServer {
   public void completion_getSuggestions2(String file, int offset, int maxResults, String completionCaseMatchingMode, String completionMode, int invocationCount, int timeout, GetSuggestionsConsumer2 consumer);
 
   /**
-   * {@code completion.registerLibraryPaths}
-   *
-   * The client can make this request to express interest in certain libraries to receive completion
-   * suggestions from based on the client path. If this request is received before the client has
-   * used 'completion.setSubscriptions' to subscribe to the AVAILABLE_SUGGESTION_SETS service, then
-   * an error of type NOT_SUBSCRIBED_TO_AVAILABLE_SUGGESTION_SETS will be generated. All previous
-   * paths are replaced by the given set of paths.
-   *
-   * @param paths A list of objects each containing a path and the additional libraries from which
-   *        the client is interested in receiving completion suggestions. If one configured path is
-   *        beneath another, the descendant will override the ancestors' configured libraries of
-   *        interest.
-   *
-   * @deprecated
-   */
-  public void completion_registerLibraryPaths(List<LibraryPathSet> paths);
-
-  /**
    * {@code completion.setSubscriptions}
    *
    * Subscribe for completion services. All previous subscriptions are replaced by the given set of
