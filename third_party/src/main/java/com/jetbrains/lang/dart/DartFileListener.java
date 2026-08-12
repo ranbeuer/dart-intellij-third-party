@@ -68,15 +68,15 @@ public final class DartFileListener implements AsyncFileListener {
     for (VFileEvent event : events) {
       if (event.getFileSystem() != LocalFileSystem.getInstance() && !ApplicationManager.getApplication().isUnitTestMode()) continue;
 
-      if (event instanceof VFilePropertyChangeEvent) {
-        if (((VFilePropertyChangeEvent)event).isRename()) {
-          if (PackageConfigFileUtil.PACKAGE_CONFIG_JSON.equals(((VFilePropertyChangeEvent)event).getOldValue()) ||
-              PackageConfigFileUtil.PACKAGE_CONFIG_JSON.equals(((VFilePropertyChangeEvent)event).getNewValue())) {
+      if (event instanceof VFilePropertyChangeEvent propertyChangeEvent) {
+        if (propertyChangeEvent.isRename()) {
+          if (PackageConfigFileUtil.PACKAGE_CONFIG_JSON.equals(propertyChangeEvent.getOldValue()) ||
+              PackageConfigFileUtil.PACKAGE_CONFIG_JSON.equals(propertyChangeEvent.getNewValue())) {
             packagesFileEvents.add(event);
           }
 
-          if (DartAnalysisServerService.isFileNameRespectedByAnalysisServer(((VFilePropertyChangeEvent)event).getOldValue().toString()) ||
-              DartAnalysisServerService.isFileNameRespectedByAnalysisServer(((VFilePropertyChangeEvent)event).getNewValue().toString())) {
+          if (DartAnalysisServerService.isFileNameRespectedByAnalysisServer(propertyChangeEvent.getOldValue().toString()) ||
+              DartAnalysisServerService.isFileNameRespectedByAnalysisServer(propertyChangeEvent.getNewValue().toString())) {
             moveOrRenameAnalyzableFileEvents.add(event);
           }
         }
