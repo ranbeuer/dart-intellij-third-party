@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Code completion with JetBrains LSP (experimental feature) (#399)
 - Populate Dart Analysis tool window errors and warnings using Language Server Protocol (LSP) publishDiagnostics notifications (#520)
 
 ### Changed

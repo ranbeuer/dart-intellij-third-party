@@ -5,6 +5,7 @@
  */
 package com.jetbrains.lang.dart.lsp
 
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.OSAgnosticPathUtil
 import com.intellij.openapi.vfs.VfsUtil
@@ -13,41 +14,14 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.platform.dartlsp.api.Lsp4jServer
 import com.intellij.platform.dartlsp.api.LspCommunicationChannel
 import com.intellij.platform.dartlsp.api.ProjectWideLspServerDescriptor
-import com.intellij.platform.dartlsp.api.customization.LspCallHierarchyDisabled
-import com.intellij.platform.dartlsp.api.customization.LspCodeActionsDisabled
-import com.intellij.platform.dartlsp.api.customization.LspCodeLensDisabled
-import com.intellij.platform.dartlsp.api.customization.LspCommandsDisabled
-import com.intellij.platform.dartlsp.api.customization.LspCompletionDisabled
-import com.intellij.platform.dartlsp.api.customization.LspCustomization
-import com.intellij.platform.dartlsp.api.customization.LspDiagnosticsDisabled
-import com.intellij.platform.dartlsp.api.customization.LspDocumentColorDisabled
-import com.intellij.platform.dartlsp.api.customization.LspDocumentHighlightsCustomizer
-import com.intellij.platform.dartlsp.api.customization.LspDocumentHighlightsDisabled
-import com.intellij.platform.dartlsp.api.customization.LspDocumentHighlightsSupport
-import com.intellij.platform.dartlsp.api.customization.LspDocumentLinkDisabled
-import com.intellij.platform.dartlsp.api.customization.LspDocumentSymbolDisabled
-import com.intellij.platform.dartlsp.api.customization.LspFindReferencesDisabled
-import com.intellij.platform.dartlsp.api.customization.LspFoldingRangeDisabled
-import com.intellij.platform.dartlsp.api.customization.LspFormattingDisabled
-import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionCustomizer
-import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionDisabled
-import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionSupport
-import com.intellij.platform.dartlsp.api.customization.LspGoToTypeDefinitionDisabled
-import com.intellij.platform.dartlsp.api.customization.LspHoverCustomizer
-import com.intellij.platform.dartlsp.api.customization.LspHoverDisabled
-import com.intellij.platform.dartlsp.api.customization.LspHoverSupport
-import com.intellij.platform.dartlsp.api.customization.LspInlayHintDisabled
-import com.intellij.platform.dartlsp.api.customization.LspOptimizeImportsDisabled
-import com.intellij.platform.dartlsp.api.customization.LspRenameDisabled
-import com.intellij.platform.dartlsp.api.customization.LspSelectionRangeDisabled
-import com.intellij.platform.dartlsp.api.customization.LspSemanticTokensDisabled
-import com.intellij.platform.dartlsp.api.customization.LspSignatureHelpDisabled
-import com.intellij.platform.dartlsp.api.customization.LspTypeHierarchyDisabled
-import com.intellij.platform.dartlsp.api.customization.LspWorkspaceSymbolDisabled
+import com.intellij.platform.dartlsp.api.customization.*
 import com.intellij.psi.PsiFile
 import com.intellij.util.io.URLUtil
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService
 import com.jetbrains.lang.dart.sdk.DartConfigurable
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionItemKind
+import javax.swing.Icon
 
 /**
  * Configuration descriptor that defines how the JetBrains LSP client communicates with the Dart Bridge server.
@@ -116,7 +90,12 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
                 LspGoToDefinitionDisabled
             }
         override val goToTypeDefinitionCustomizer = LspGoToTypeDefinitionDisabled
-        override val completionCustomizer = LspCompletionDisabled
+        override val completionCustomizer: LspCompletionCustomizer
+            get() = if (DartAnalysisServerService.isLspCompletionEnabled(project)) {
+                DartLspCompletionSupport()
+            } else {
+                LspCompletionDisabled
+            }
         override val semanticTokensCustomizer = LspSemanticTokensDisabled
         override val diagnosticsCustomizer = LspDiagnosticsDisabled
         override val codeActionsCustomizer = LspCodeActionsDisabled
@@ -145,5 +124,13 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         override val selectionRangeCustomizer = LspSelectionRangeDisabled
         override val codeLensCustomizer = LspCodeLensDisabled
         override val renameCustomizer = LspRenameDisabled
+    }
+}
+
+open class DartLspCompletionSupport : LspCompletionSupport() {
+    public override fun getIcon(item: CompletionItem): Icon? = when (item.kind) {
+        CompletionItemKind.Constructor -> AllIcons.Nodes.ClassInitializer
+        CompletionItemKind.Function -> AllIcons.Nodes.Lambda
+        else -> super.getIcon(item)
     }
 }
