@@ -1,4 +1,5 @@
 ## Unreleased
+- Find Usages / references with JetBrains LSP (experimental feature) (#396) under ## Unreleased -> ### Added).
 
 ### Added
 
