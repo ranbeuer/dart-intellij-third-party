@@ -92,7 +92,7 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         override val goToTypeDefinitionCustomizer = LspGoToTypeDefinitionDisabled
         override val completionCustomizer: LspCompletionCustomizer
             get() = if (DartAnalysisServerService.isLspCompletionEnabled(project)) {
-                DartLspCompletionSupport()
+                DartLspCompletionSupport
             } else {
                 LspCompletionDisabled
             }
@@ -127,7 +127,7 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 }
 
-open class DartLspCompletionSupport : LspCompletionSupport() {
+object DartLspCompletionSupport : LspCompletionSupport() {
     public override fun getIcon(item: CompletionItem): Icon? = when (item.kind) {
         CompletionItemKind.Constructor -> AllIcons.Nodes.ClassInitializer
         CompletionItemKind.Function -> AllIcons.Nodes.Lambda
