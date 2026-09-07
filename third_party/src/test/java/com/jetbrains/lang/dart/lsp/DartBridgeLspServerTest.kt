@@ -23,9 +23,13 @@ import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
+import org.eclipse.lsp4j.DocumentFormattingParams
 import org.eclipse.lsp4j.DocumentHighlightKind
 import org.eclipse.lsp4j.DocumentHighlightParams
+import org.eclipse.lsp4j.DocumentRangeFormattingParams
+import org.eclipse.lsp4j.FormattingOptions
 import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.MessageActionItem
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.Position
@@ -36,6 +40,7 @@ import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.TypeHierarchyItem
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams
@@ -769,6 +774,99 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         assertEquals(4, result[0].range.start.character)
         assertEquals(0, result[0].range.end.line)
         assertEquals(10, result[0].range.end.character)
+    }
+
+    fun testFormattingCapabilities() {
+        val capabilities = bridgeServer.initialize(InitializeParams()).get().capabilities
+        assertEquals(true, capabilities.documentFormattingProvider.left)
+        assertEquals(true, capabilities.documentRangeFormattingProvider.left)
+    }
+
+    fun testFormattingRequest() {
+        val params = DocumentFormattingParams().apply {
+            textDocument = TextDocumentIdentifier("file://test.dart")
+            options = FormattingOptions(2, true)
+        }
+        val future = bridgeServer.formatting(params)
+        val jsonObject = requireNotNull(capturedRequests.find {
+            it.get("method")?.asString == "lsp.handle"
+        }) {
+            "An lsp.handle request should be sent to DAS"
+        }
+        assertEquals("123", jsonObject.get("id").asString)
+
+        val lspMessage = jsonObject.getAsJsonObject("params").getAsJsonObject("lspMessage")
+        assertEquals("123", lspMessage.get("id").asString)
+        assertEquals("textDocument/formatting", lspMessage.get("method").asString)
+
+        val responseJson = """
+            {
+              "id": "123",
+              "result": {
+                "lspResponse": {
+                  "jsonrpc": "2.0",
+                  "id": "123",
+                  "result": [
+                    {
+                      "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
+                      "newText": "  "
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+        capturedListener.onResponse(responseJson)
+        val edits = future.get(5, TimeUnit.SECONDS)
+        assertNotNull(edits)
+        assertEquals(1, edits.size)
+        assertEquals("  ", edits[0].newText)
+    }
+
+    fun testRangeFormattingRequest() {
+        val params = DocumentRangeFormattingParams().apply {
+            textDocument = TextDocumentIdentifier("file://test.dart")
+            options = FormattingOptions(2, true)
+            range = Range(Position(0, 0), Position(1, 5))
+        }
+        val future = bridgeServer.rangeFormatting(params)
+        val jsonObject = requireNotNull(capturedRequests.find {
+            it.get("method")?.asString == "lsp.handle"
+        }) {
+            "An lsp.handle request should be sent to DAS"
+        }
+        assertEquals("123", jsonObject.get("id").asString)
+
+        val lspMessage = jsonObject.getAsJsonObject("params").getAsJsonObject("lspMessage")
+        assertEquals("123", lspMessage.get("id").asString)
+        assertEquals("textDocument/rangeFormatting", lspMessage.get("method").asString)
+
+        val responseJson = """
+            {
+              "id": "123",
+              "result": {
+                "lspResponse": {
+                  "jsonrpc": "2.0",
+                  "id": "123",
+                  "result": [
+                    {
+                      "range": {"start": {"line": 0, "character": 0}, "end": {"line": 1, "character": 5}},
+                      "newText": "formatted code"
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+        capturedListener.onResponse(responseJson)
+        val edits = future.get(5, TimeUnit.SECONDS)
+        assertNotNull(edits)
+        assertEquals(1, edits.size)
+        assertEquals("formatted code", edits[0].newText)
+        assertEquals(0, edits[0].range.start.line)
+        assertEquals(0, edits[0].range.start.character)
+        assertEquals(1, edits[0].range.end.line)
+        assertEquals(5, edits[0].range.end.character)
     }
 
     fun testIsDartSdkVersionSufficientForLspReferences() {

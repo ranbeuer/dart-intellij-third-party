@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- Document and selection formatting with JetBrains LSP (experimental feature) (#634)
 
 ### Changed
 
