@@ -1,9 +1,12 @@
 ## Unreleased
 
 ### Added
+- Experimental JetBrains LSP formatting for Reformat Code document and selection operations (#634)
 - Inlay hints for types and parameter names, configurable in Settings | Editor | Inlay Hints (JetBrains LSP; requires Dart SDK 3.14.0-139.0.dev or newer) (#617)
 
 ### Changed
+- Experimental LSP formatting leaves width selection to Dart through the file URI; IntelliJ right margin and `dart.lineLength` are not sent on this path.
+- Legacy formatting consumers remain available temporarily during the migration and provide the rollback window when experimental LSP formatting is disabled.
 
 ### Removed
 

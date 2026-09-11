@@ -13,13 +13,15 @@ enum class LspMethod(
     DEFINITION("textDocument/definition", isExperimental = true, presentableName = "navigation"),
     DIAGNOSTIC_SERVER("dart/diagnosticServer", isExperimental = false),
     DOCUMENT_HIGHLIGHT("textDocument/documentHighlight", isExperimental = true, presentableName = "read/write highlighting"),
+    FORMATTING("textDocument/formatting", isExperimental = true, presentableName = "formatting"),
     HOVER("textDocument/hover", isExperimental = false),
     INITIALIZE("initialize"),
     // Not gated by the experimental LSP flag because there is no fallback in legacy mode.
     INLAY_HINT("textDocument/inlayHint", isExperimental = false),
     SHUTDOWN("shutdown"),
     TYPE_DEFINITION("textDocument/typeDefinition", isExperimental = false),
-    REFERENCES("textDocument/references", isExperimental = true, presentableName = "references");
+    REFERENCES("textDocument/references", isExperimental = true, presentableName = "references"),
+    RANGE_FORMATTING("textDocument/rangeFormatting", isExperimental = true, presentableName = "range formatting");
 
     companion object {
         fun fromMethod(method: String): LspMethod? = entries.find { it.method == method }

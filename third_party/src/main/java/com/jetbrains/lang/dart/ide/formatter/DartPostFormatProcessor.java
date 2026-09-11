@@ -13,6 +13,7 @@ import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.impl.source.codeStyle.PostFormatProcessor;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.actions.DartStyleAction;
+import com.jetbrains.lang.dart.lsp.DartLspFormattingRouting;
 import com.jetbrains.lang.dart.psi.DartFile;
 import com.jetbrains.lang.dart.sdk.DartSdkLibUtil;
 import org.jetbrains.annotations.NotNull;
@@ -25,9 +26,13 @@ final class DartPostFormatProcessor implements PostFormatProcessor {
 
   @Override
   public @NotNull TextRange processText(final @NotNull PsiFile psiFile,
-                                        final @NotNull TextRange rangeToReformat,
-                                        final @NotNull CodeStyleSettings settings) {
+                                         final @NotNull TextRange rangeToReformat,
+                                         final @NotNull CodeStyleSettings settings) {
     if (!isApplicable(psiFile)) return rangeToReformat;
+    final VirtualFile vFile = psiFile.getVirtualFile();
+    if (vFile != null && DartLspFormattingRouting.isLspOwnedEditorFormatting(psiFile.getProject(), vFile)) {
+      return rangeToReformat;
+    }
 
     return DartStyleAction.reformatRangeAsPostFormatProcessor(psiFile, rangeToReformat);
   }
@@ -40,6 +45,6 @@ final class DartPostFormatProcessor implements PostFormatProcessor {
     final Module module = ModuleUtilCore.findModuleForPsiElement(psiFile);
     if (module == null || !DartSdkLibUtil.isDartSdkEnabled(module)) return false;
     if (!ProjectFileIndex.getInstance(project).isInContent(vFile)) return false;
-      return DartAnalysisServerService.getInstance(project).serverReadyForRequest();
+    return DartAnalysisServerService.getInstance(project).serverReadyForRequest();
   }
 }

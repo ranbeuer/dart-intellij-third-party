@@ -29,6 +29,7 @@ import com.intellij.psi.PsiFile;
 import com.jetbrains.lang.dart.DartBundle;
 import com.jetbrains.lang.dart.DartLanguage;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
+import com.jetbrains.lang.dart.lsp.DartLspFormattingRouting;
 import org.dartlang.analysis.server.protocol.SourceEdit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -71,6 +72,9 @@ public class DartStyleAction extends AbstractDartFileProcessingAction {
                                          final boolean runningAsPostFormatProcessor) {
     final Project project = psiFile.getProject();
     final VirtualFile file = psiFile.getVirtualFile();
+    if (!runningAsPostFormatProcessor && file != null && DartLspFormattingRouting.isLspOwnedEditorFormatting(project, file)) {
+      return inputRange;
+    }
     final Document document = PsiDocumentManager.getInstance(project).getDocument(psiFile);
     if (file == null || document == null) return inputRange;
 

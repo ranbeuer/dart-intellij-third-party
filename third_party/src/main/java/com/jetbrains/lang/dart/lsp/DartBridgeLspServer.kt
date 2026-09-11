@@ -32,8 +32,10 @@ import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
+import org.eclipse.lsp4j.DocumentFormattingParams
 import org.eclipse.lsp4j.DocumentHighlight
 import org.eclipse.lsp4j.DocumentHighlightParams
+import org.eclipse.lsp4j.DocumentRangeFormattingParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
@@ -53,6 +55,7 @@ import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
+import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.TypeHierarchyItem
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams
@@ -247,6 +250,8 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
             setTypeHierarchyProvider(true)
             setCallHierarchyProvider(true)
             setReferencesProvider(true)
+            setDocumentFormattingProvider(true)
+            setDocumentRangeFormattingProvider(true)
             // Add other capabilities as we support them.
         }
         return CompletableFuture.completedFuture(InitializeResult(capabilities))
@@ -296,6 +301,16 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         val type = object: TypeToken<List<Location>>() {}.type
 
         return forwardRequest("textDocument/references", params, type)
+    }
+
+    override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
+        val type = object : TypeToken<List<TextEdit>>() {}.type
+        return forwardRequest("textDocument/formatting", params, type)
+    }
+
+    override fun rangeFormatting(params: DocumentRangeFormattingParams): CompletableFuture<List<TextEdit>> {
+        val type = object : TypeToken<List<TextEdit>>() {}.type
+        return forwardRequest("textDocument/rangeFormatting", params, type)
     }
 
     // Unlike the other overrides above, this one must never let its future complete
@@ -417,6 +432,11 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         
         val pending = PendingRequest(future, responseType)
         pendingRequests[legacyId] = pending
+        future.whenComplete { _, error ->
+            if (error != null) {
+                pendingRequests.remove(legacyId, pending)
+            }
+        }
 
         val lspRequest = JsonObject().apply {
             addProperty("jsonrpc", JSONRPC_VERSION)
@@ -499,4 +519,3 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         }
     }
 }
-
