@@ -1,9 +1,11 @@
 ## Unreleased
 
 ### Added
-- Document and selection formatting with JetBrains LSP (experimental feature) (#634)
+- Experimental JetBrains LSP formatting for Reformat Code document and selection operations (#634)
 
 ### Changed
+- Experimental LSP formatting leaves width selection to Dart through the file URI; IntelliJ right margin and `dart.lineLength` are not sent on this path.
+- Legacy formatting consumers remain available temporarily during the migration and provide the rollback window when experimental LSP formatting is disabled.
 
 ### Removed
 

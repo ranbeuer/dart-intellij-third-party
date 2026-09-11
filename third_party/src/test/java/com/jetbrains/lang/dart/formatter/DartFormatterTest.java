@@ -187,8 +187,8 @@ public class DartFormatterTest extends FormatterTestCase {
     doTest();
   }
 
-  public void testLspFlagShortCircuitsLegacyFormatter() throws Exception {
+  public void testLspFlagPreservesLegacyFormatterForUnmigratedConsumers() throws Exception {
     com.jetbrains.lang.dart.sdk.DartConfigurable.setExperimentalLspFeaturesEnabled(getProject(), true);
-    doTextTest("void main(){\nprint('hello');\n}", "void main(){\nprint('hello');\n}");
+    doTextTest("void main(){\nprint('hello');\n}", "void main() {\n  print('hello');\n}");
   }
 }

@@ -412,6 +412,11 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         
         val pending = PendingRequest(future, responseType)
         pendingRequests[legacyId] = pending
+        future.whenComplete { _, error ->
+            if (error != null) {
+                pendingRequests.remove(legacyId, pending)
+            }
+        }
 
         val lspRequest = JsonObject().apply {
             addProperty("jsonrpc", JSONRPC_VERSION)
@@ -494,4 +499,3 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         }
     }
 }
-

@@ -129,7 +129,7 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
                         file: VirtualFile,
                         ideCanFormatThisFileItself: Boolean,
                         serverExplicitlyWantsToFormatThisFile: Boolean
-                    ): Boolean = true
+                    ): Boolean = DartLspFormattingRouting.isLspOwnedEditorFormatting(project, file)
                 }
             } else {
                 LspFormattingDisabled

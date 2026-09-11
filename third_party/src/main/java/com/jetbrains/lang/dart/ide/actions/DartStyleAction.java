@@ -23,13 +23,13 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
-import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.jetbrains.lang.dart.DartBundle;
 import com.jetbrains.lang.dart.DartLanguage;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
+import com.jetbrains.lang.dart.lsp.DartLspFormattingRouting;
 import org.dartlang.analysis.server.protocol.SourceEdit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -71,8 +71,10 @@ public class DartStyleAction extends AbstractDartFileProcessingAction {
                                          final @NotNull TextRange inputRange,
                                          final boolean runningAsPostFormatProcessor) {
     final Project project = psiFile.getProject();
-    if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) return inputRange;
     final VirtualFile file = psiFile.getVirtualFile();
+    if (!runningAsPostFormatProcessor && file != null && DartLspFormattingRouting.isLspOwnedEditorFormatting(project, file)) {
+      return inputRange;
+    }
     final Document document = PsiDocumentManager.getInstance(project).getDocument(psiFile);
     if (file == null || document == null) return inputRange;
 
@@ -155,7 +157,6 @@ public class DartStyleAction extends AbstractDartFileProcessingAction {
 
   @Override
   protected void runOverFiles(final @NotNull Project project, final @NotNull List<VirtualFile> dartFiles) {
-    if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) return;
     if (dartFiles.isEmpty()) {
       Messages
         .showInfoMessage(project, DartBundle.message("dart.style.files.no.dart.files"), DartBundle.message("action.Dart.DartStyle.text"));
@@ -173,7 +174,6 @@ public class DartStyleAction extends AbstractDartFileProcessingAction {
 
   // keep public to be accessible in 3rd party plugins
   public static void runDartfmt(final @NotNull Project project, final @NotNull List<? extends VirtualFile> dartFiles) {
-    if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) return;
     final Map<VirtualFile, String> fileToNewContentMap = new HashMap<>();
     final int lineLength = getRightMargin(project);
 
