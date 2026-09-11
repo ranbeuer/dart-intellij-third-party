@@ -16,6 +16,8 @@ enum class LspMethod(
     FORMATTING("textDocument/formatting", isExperimental = true, presentableName = "formatting"),
     HOVER("textDocument/hover", isExperimental = false),
     INITIALIZE("initialize"),
+    // Not gated by the experimental LSP flag because there is no fallback in legacy mode.
+    INLAY_HINT("textDocument/inlayHint", isExperimental = false),
     SHUTDOWN("shutdown"),
     TYPE_DEFINITION("textDocument/typeDefinition", isExperimental = false),
     REFERENCES("textDocument/references", isExperimental = true, presentableName = "references"),

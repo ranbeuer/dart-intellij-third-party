@@ -40,6 +40,8 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
+import org.eclipse.lsp4j.InlayHint
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.PublishDiagnosticsParams
@@ -244,6 +246,7 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
             setDefinitionProvider(true)
             setTypeDefinitionProvider(true)
             setDocumentHighlightProvider(true)
+            setInlayHintProvider(true)
             setTypeHierarchyProvider(true)
             setCallHierarchyProvider(true)
             setReferencesProvider(true)
@@ -308,6 +311,23 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
     override fun rangeFormatting(params: DocumentRangeFormattingParams): CompletableFuture<List<TextEdit>> {
         val type = object : TypeToken<List<TextEdit>>() {}.type
         return forwardRequest("textDocument/rangeFormatting", params, type)
+    }
+
+    // Unlike the other overrides above, this one must never let its future complete
+    // exceptionally: the LSP client's inlay-hint cache awaits this future inside a coroutine
+    // without catching exceptions, so a DAS error (e.g. FileNotAnalyzed) would otherwise
+    // surface as an uncaught IDE error instead of simply showing no hints.
+    override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> {
+        val type = object : TypeToken<List<InlayHint>>() {}.type
+        return forwardRequest<List<InlayHint>>("textDocument/inlayHint", params, type)
+            .handle { hints, error ->
+                if (error != null) {
+                    logger.info("textDocument/inlayHint failed: ${error.message}")
+                    emptyList()
+                } else {
+                    hints ?: emptyList()
+                }
+            }
     }
 
     override fun diagnosticServer(): CompletableFuture<DiagnosticServerResult> {

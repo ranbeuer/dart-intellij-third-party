@@ -49,7 +49,7 @@ public class Flag extends Element {
   /**
    * The value of this flag as a string.
    *
-   * If this property is absent, then the value of the flag was NULL.
+   * If this property is absent, then the value of the flag was nullptr.
    *
    * Can return <code>null</code>.
    */
