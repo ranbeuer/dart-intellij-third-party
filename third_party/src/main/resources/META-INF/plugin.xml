@@ -171,6 +171,11 @@
                                           bundle="messages.DartBundle"
                                           nameKey="dart.inlay.hints.parameter.names.name"
                                           descriptionKey="dart.inlay.hints.parameter.names.description">
+      <option optionId="dart.parameter.names.only.literal"
+              enabledByDefault="false"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.parameter.names.only.literal.name"
+              descriptionKey="dart.inlay.hints.parameter.names.only.literal.description"/>
     </codeInsight.declarativeInlayProvider>
 
     <codeInsight.declarativeInlayProvider language="Dart"
@@ -181,6 +186,31 @@
                                           bundle="messages.DartBundle"
                                           nameKey="dart.inlay.hints.types.name"
                                           descriptionKey="dart.inlay.hints.types.description">
+      <option optionId="dart.types.variable"
+              enabledByDefault="true"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.types.variable.name"
+              descriptionKey="dart.inlay.hints.types.variable.description"/>
+      <option optionId="dart.types.return"
+              enabledByDefault="true"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.types.return.name"
+              descriptionKey="dart.inlay.hints.types.return.description"/>
+      <option optionId="dart.types.parameter"
+              enabledByDefault="true"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.types.parameter.name"
+              descriptionKey="dart.inlay.hints.types.parameter.description"/>
+      <option optionId="dart.types.type.arguments"
+              enabledByDefault="true"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.types.type.arguments.name"
+              descriptionKey="dart.inlay.hints.types.type.arguments.description"/>
+      <option optionId="dart.types.dot.shorthand"
+              enabledByDefault="true"
+              bundle="messages.DartBundle"
+              nameKey="dart.inlay.hints.types.dot.shorthand.name"
+              descriptionKey="dart.inlay.hints.types.dot.shorthand.description"/>
     </codeInsight.declarativeInlayProvider>
 
     <lang.surroundDescriptor language="Dart"
@@ -315,7 +345,7 @@
     </action>
     <action id="Dart.Analyzer.Diagnostics" class="com.jetbrains.lang.dart.ide.errorTreeView.AnalysisServerDiagnosticsAction">
     </action>
-    <action id="Dart.DartStyle" class="com.jetbrains.lang.dart.ide.actions.DartStyleAction">
+    <action id="Dart.DartStyle" class="com.jetbrains.lang.dart.ide.actions.DartReformatAction">
       <add-to-group group-id="CodeFormatGroup" anchor="last"/>
       <add-to-group group-id="EditorPopupMenu" relative-to-action="EditorPopupMenu1" anchor="after"/>
       <add-to-group group-id="ProjectViewPopupMenuModifyGroup" anchor="before" relative-to-action="$Delete"/>
