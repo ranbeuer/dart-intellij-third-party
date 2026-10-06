@@ -1,10 +1,13 @@
 ## Unreleased
 
 ### Added
+- Experimental JetBrains LSP formatting for Reformat Code document and selection operations (#634)
 - File Structure view implemented with JetBrains LSP (experimental feature) (#673)
 - Code completion with JetBrains LSP (experimental feature) (#399)
 
 ### Changed
+- Experimental LSP formatting leaves width selection to Dart through the file URI; IntelliJ right margin and `dart.lineLength` are not sent on this path.
+- Experimental LSP hides the dedicated Dart formatting action in the project tree and renames the selection-aware editor action to Reformat Code. Disabling LSP restores the legacy action; the public `runDartfmt` compatibility API remains available regardless of this setting.
 
 ### Removed
 
@@ -21,6 +24,8 @@
 
 ### Changed
 - Highlighting read vs write variable occurrences via LSP is now enabled for all users (#693)
+
+### Removed
 
 ### Fixed
 - Support lsp4j 1.0.0 in IntelliJ 2026.3 (#671)
