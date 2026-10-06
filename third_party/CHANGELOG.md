@@ -7,6 +7,7 @@
 ### Removed
 
 ### Fixed
+- Support Go to Declaration or Usages and Find Usages on declaration sites when experimental LSP is enabled (#699)
 
 ## 510.0.0
 
