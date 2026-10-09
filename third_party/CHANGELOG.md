@@ -5,6 +5,7 @@
 - Code completion with JetBrains LSP (experimental feature) (#399)
 
 ### Changed
+- Go to Implementation and Go to Super use JetBrains LSP when experimental LSP features are enabled; Super navigates to the server's single effective target. Gutter navigation and Method Hierarchy are unchanged (#404)
 
 ### Removed
 
