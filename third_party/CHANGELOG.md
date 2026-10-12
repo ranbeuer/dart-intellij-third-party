@@ -6,6 +6,7 @@
 - Support for the Dart "parts with imports" language feature in IDE-side resolution used by Override/Implement Methods, Generate actions, and parameter info: imports in part files and nested parts ([dart-lang/sdk#56209](https://github.com/dart-lang/sdk/issues/56209)) (#721)
 
 ### Changed
+- Go to Implementation and Go to Super use JetBrains LSP when experimental LSP features are enabled; Super navigates to the server's single effective target. Gutter navigation and Method Hierarchy are unchanged (#404)
 
 ### Removed
 

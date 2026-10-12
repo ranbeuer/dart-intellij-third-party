@@ -49,6 +49,7 @@ import org.eclipse.lsp4j.FileOperationPattern
 import org.eclipse.lsp4j.FileOperationsServerCapabilities
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.ImplementationParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
@@ -61,6 +62,7 @@ import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameFilesParams
 import org.eclipse.lsp4j.ServerCapabilities
 import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.TextDocumentPositionParams
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.TypeHierarchyItem
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams
@@ -296,6 +298,7 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         val capabilities = ServerCapabilities().apply {
             setHoverProvider(true)
             setDefinitionProvider(true)
+            setImplementationProvider(true)
             setTypeDefinitionProvider(true)
             setDocumentHighlightProvider(true)
             setInlayHintProvider(true)
@@ -349,6 +352,13 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         }
     }
 
+    override fun implementation(params: ImplementationParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        // The Dart client does not advertise implementation.linkSupport, so the SDK returns Locations.
+        val type = object : TypeToken<List<Location>>() {}.type
+        return forwardRequest<List<Location>>("textDocument/implementation", params, type)
+            .thenApply { Either.forLeft<List<Location>, List<LocationLink>>(it ?: emptyList()) }
+    }
+
     override fun typeDefinition(params: TypeDefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
         val type = object : TypeToken<List<LocationLink>>() {}.type
         return forwardRequest<List<LocationLink>>("textDocument/typeDefinition", params, type).thenApply { links ->
@@ -400,6 +410,10 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
                     hints ?: emptyList()
                 }
             }
+    }
+
+    override fun getSuper(params: TextDocumentPositionParams): CompletableFuture<Location?> {
+        return forwardRequest("dart/textDocument/super", params, Location::class.java as Type)
     }
 
     override fun diagnosticServer(): CompletableFuture<DiagnosticServerResult> {
