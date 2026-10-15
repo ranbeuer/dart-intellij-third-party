@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.ex.AnActionListener
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.util.concurrent.TimeUnit
 
 class DartNavigationAnalyticsTest : BasePlatformTestCase() {
   private val ids = listOf("GotoSuperMethod", "GotoImplementation", "TypeHierarchy", "MethodHierarchy")
@@ -93,6 +94,35 @@ class DartNavigationAnalyticsTest : BasePlatformTestCase() {
     assertEquals(setOf("eventName", "eventData"), event.keySet())
     assertEquals("ide_event", event["eventName"].asString)
     return event["eventData"].asJsonObject
+  }
+
+  fun testLazyPsiContextIsReadUnderReadAccess() {
+    val file = myFixture.configureByText("source.dart", "class Source {}")
+    val fixtureProject = project
+    val application = ApplicationManager.getApplication()
+    assertFalse("Waiting for a pooled read must not hold a write lock", application.isWriteAccessAllowed)
+    var psiFileRequested = false
+    val context = DataContext { dataId ->
+      when {
+        CommonDataKeys.PROJECT.`is`(dataId) -> fixtureProject
+        CommonDataKeys.PSI_FILE.`is`(dataId) -> {
+          application.assertReadAccessAllowed()
+          psiFileRequested = true
+          file
+        }
+        else -> null
+      }
+    }
+    val future = application.executeOnPooledThread {
+      assertFalse("Listener entry must not already have read access", application.isReadAccessAllowed)
+      assertEquals(1, record(ids.first(), context, actionListener = DartNavigationActionListener()).size)
+      assertTrue("Listener must request the lazy PSI file", psiFileRequested)
+    }
+    try {
+      future.get(5, TimeUnit.SECONDS)
+    } finally {
+      future.cancel(true)
+    }
   }
 
   fun testEditorOnlyDartContext() {
@@ -183,12 +213,12 @@ class DartNavigationAnalyticsTest : BasePlatformTestCase() {
     .add(CommonDataKeys.PROJECT, project).add(CommonDataKeys.PSI_FILE, myFixture.file)
     .add(CommonDataKeys.EDITOR, myFixture.editor).build()
 
-  private fun record(id: String, context: DataContext, place: String = "EditorPopup"): List<AnalyticsData> {
+  private fun record(id: String, context: DataContext, place: String = "EditorPopup", actionListener: AnActionListener = listener()): List<AnalyticsData> {
     val action = ActionManager.getInstance().getAction(id)
     assertNotNull("SDK action must be registered: $id", action)
     val events = mutableListOf<AnalyticsData>()
     Analytics.withReportObserver(events::add) {
-      listener().beforeActionPerformed(action, AnActionEvent.createEvent(action, context, null, place, ActionUiKind.NONE, null))
+      actionListener.beforeActionPerformed(action, AnActionEvent.createEvent(action, context, null, place, ActionUiKind.NONE, null))
     }
     return events
   }
