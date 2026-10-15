@@ -1,6 +1,7 @@
 // Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.lang.dart.ide.errorTreeView;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.intellij.execution.runners.ExecutionUtil;
 import com.intellij.ide.projectView.ProjectView;
 import com.intellij.ide.projectView.impl.ProjectViewPane;
@@ -18,6 +19,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import com.intellij.util.Alarm;
@@ -28,6 +30,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.lang.dart.DartBundle;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerMessages;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
+import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import icons.DartIcons;
 import org.dartlang.analysis.server.protocol.AnalysisError;
 import org.jetbrains.annotations.NonNls;
@@ -205,6 +208,11 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
     }
   }
 
+  @VisibleForTesting
+  public @Nullable Notification getNotification() {
+    return myNotification;
+  }
+
   private void showNotification(@NotNull NotificationType notificationType,
                                 @NotNull @NlsContexts.NotificationTitle String title,
                                 @Nullable @NlsContexts.NotificationContent String content,
@@ -219,16 +227,45 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
       .createNotification(title, StringUtil.notNullize(content), notificationType);
 
     if (addOpenAnalysisAction) {
-      notification.addAction(NotificationAction.createSimple(
-        DartBundle.message("notification.open.dart.analysis.action.text"),
-        () -> {
-          notification.expire();
-          ToolWindow toolWindow = getDartAnalysisToolWindow();
+      if (DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)) {
+        notification.addAction(NotificationAction.createSimple(
+          DartBundle.message("notification.open.problems.action.text"),
+          () -> {
+            notification.expire();
+            ToolWindow toolWindow = ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW);
+            if (toolWindow != null) {
+              toolWindow.activate(null);
+            }
+          }
+        ));
+      }
+      else {
+        notification.addAction(NotificationAction.createSimple(
+          DartBundle.message("notification.open.dart.analysis.action.text"),
+          () -> {
+            notification.expire();
+            ToolWindow toolWindow = getDartAnalysisToolWindow();
+            if (toolWindow != null) {
+              toolWindow.activate(null);
+            }
+          }
+        ));
+      }
+    }
+
+    if (content != null && content.contains("open.dart.analysis")) {
+      //noinspection deprecation
+      notification.setListener((n, e) -> {
+        if ("open.dart.analysis".equals(e.getDescription())) {
+          n.expire();
+          ToolWindow toolWindow = DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)
+            ? ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW)
+            : getDartAnalysisToolWindow();
           if (toolWindow != null) {
             toolWindow.activate(null);
           }
         }
-      ));
+      });
     }
 
     if (!terse) {
