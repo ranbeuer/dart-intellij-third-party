@@ -483,18 +483,30 @@ fun getDocumentFilterPattern(filter: DocumentFilter): Either<String, Any>? {
         with open(lsp_server_impl_path, "w", encoding="utf-8") as f:
             f.write(server_content)
 
-    # 12. Make LspStructureViewFactory public so DartStructureViewFactory (Java) can delegate to it
+    # 12. Make LspStructureViewFactory public so DartStructureViewFactory (Java) can delegate to it,
+    # and fetch documentSymbols dynamically in LspStructureViewRoot.getChildren() off the EDT.
     structure_view_factory_path = os.path.join(base_dir, "third_party/thirdPartySrc/platform-lsp/src/com/intellij/platform/dartlsp/impl/structureView/LspStructureViewFactory.kt")
     if os.path.exists(structure_view_factory_path):
         with open(structure_view_factory_path, "r", encoding="utf-8") as f:
             factory_content = f.read()
-        if "internal class LspStructureViewFactory" in factory_content:
-            factory_content = factory_content.replace(
-                "internal class LspStructureViewFactory",
-                "class LspStructureViewFactory"
-            )
-            with open(structure_view_factory_path, "w", encoding="utf-8") as f:
-                f.write(factory_content)
+        factory_content = factory_content.replace(
+            "internal class LspStructureViewFactory",
+            "class LspStructureViewFactory"
+        )
+        factory_content = factory_content.replace(
+            "root = LspStructureViewRoot(support, psiFile, support.getDocumentSymbols())",
+            "root = LspStructureViewRoot(support, psiFile)"
+        )
+        factory_content = factory_content.replace(
+            "private class LspStructureViewRoot(\n  private val support: LspStructureViewSupport,\n  private val psiFile: PsiFile,\n  private val documentSymbols: List<DocumentSymbol>,\n)",
+            "private class LspStructureViewRoot(\n  private val support: LspStructureViewSupport,\n  private val psiFile: PsiFile,\n)"
+        )
+        factory_content = factory_content.replace(
+            "return documentSymbols.map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()",
+            "return support.getDocumentSymbols().map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()"
+        )
+        with open(structure_view_factory_path, "w", encoding="utf-8") as f:
+            f.write(factory_content)
 
     print("Patch applied successfully!")
 

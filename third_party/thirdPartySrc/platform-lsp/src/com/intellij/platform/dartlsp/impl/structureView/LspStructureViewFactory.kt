@@ -56,7 +56,7 @@ private class LspStructureViewModel(
   override fun isValid(): Boolean = psiFile.manager.modificationTracker.modificationCount == lastPsiModificationCount && super.isValid()
 
   private fun initRoot() {
-    root = LspStructureViewRoot(support, psiFile, support.getDocumentSymbols())
+    root = LspStructureViewRoot(support, psiFile)
   }
 
   override fun isAlwaysShowsPlus(element: StructureViewTreeElement?): Boolean = false
@@ -98,12 +98,11 @@ private class LspStructureViewModel(
 private class LspStructureViewRoot(
   private val support: LspStructureViewSupport,
   private val psiFile: PsiFile,
-  private val documentSymbols: List<DocumentSymbol>,
 ) : StructureViewTreeElement {
   override fun getValue(): PsiFile = psiFile
 
   override fun getChildren(): Array<LspDocumentSymbolTreeElement> {
-    return documentSymbols.map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()
+    return support.getDocumentSymbols().map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()
   }
 
   override fun getPresentation(): ItemPresentation {
