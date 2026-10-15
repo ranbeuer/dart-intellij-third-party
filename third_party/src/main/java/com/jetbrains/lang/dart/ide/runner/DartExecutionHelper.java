@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.GlobalSearchScopesCore;
 import com.intellij.util.containers.ContainerUtil;
@@ -15,6 +16,7 @@ import com.jetbrains.lang.dart.DartFileType;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.analyzer.DartServerData;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
+import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.jetbrains.lang.dart.util.PubspecYamlUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -35,13 +37,22 @@ public final class DartExecutionHelper {
     GlobalSearchScope scope = getScopeOfFilesThatMayAffectExecution(project, launchFile);
     if (scope == null) return;
 
-    DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
-    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
-    if (errors.isEmpty()) return;
+    if (!hasErrors(project, scope)) return;
 
     // Show a notification on the dart analysis tool window.
     final DartProblemsView problemsView = DartProblemsView.getInstance(project);
     problemsView.showErrorNotification("", message, icon, true);
+  }
+
+  @VisibleForTesting
+  static boolean hasErrors(final @NotNull Project project, final @NotNull GlobalSearchScope scope) {
+    if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) {
+      return WolfTheProblemSolver.getInstance(project).hasProblemFilesBeneath(scope::contains);
+    }
+
+    DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
+    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
+    return !errors.isEmpty();
   }
 
   public static void clearIssueNotifications(final @NotNull Project project) {
