@@ -10,6 +10,7 @@ import com.intellij.injected.editor.VirtualFileWindow
 import com.intellij.lang.PsiStructureViewFactory
 import com.intellij.navigation.ColoredItemPresentation
 import com.intellij.navigation.ItemPresentation
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.CodeInsightColors
@@ -99,10 +100,23 @@ private class LspStructureViewRoot(
   private val support: LspStructureViewSupport,
   private val psiFile: PsiFile,
 ) : StructureViewTreeElement {
+  @Volatile
+  private var cachedChildren: Array<LspDocumentSymbolTreeElement>? = null
+
   override fun getValue(): PsiFile = psiFile
 
   override fun getChildren(): Array<LspDocumentSymbolTreeElement> {
-    return support.getDocumentSymbols().map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()
+    cachedChildren?.let { return it }
+    if (ApplicationManager.getApplication().isDispatchThread) {
+      return emptyArray()
+    }
+
+    val symbols = support.getDocumentSymbols()
+    val children = symbols.map { LspDocumentSymbolTreeElement(support, it) }.toTypedArray()
+    if (symbols.isNotEmpty()) {
+      cachedChildren = children
+    }
+    return children
   }
 
   override fun getPresentation(): ItemPresentation {
