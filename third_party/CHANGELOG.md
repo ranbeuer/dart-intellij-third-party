@@ -14,6 +14,7 @@
 - Avoid UI freeze in Highlight Usages in File when waiting for LSP document highlights (#720)
 - Restore semantic syntax highlighting after external file modification (#656)
 - Avoid UI freeze during project startup by updating excluded folders directly via `WorkspaceModel` (#728)
+- Auto-selecting the current editor element in the Structure view when navigating across files
 
 ## 510.0.0
 
