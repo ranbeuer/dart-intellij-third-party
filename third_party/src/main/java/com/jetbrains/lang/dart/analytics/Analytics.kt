@@ -45,7 +45,10 @@ import kotlin.time.Duration.Companion.seconds
 private const val DEBUGGING_LOCALLY = false
 private const val DAS_NOTIFICATION_GROUP = "Dart Analysis Server"
 
-private val DEFAULT_RESPONSE_TIMEOUT = 1.seconds
+/// DTD can be slow to respond right after it starts (e.g. on IDE startup while
+/// indexing), so allow a generous amount of time for unified analytics calls.
+/// See https://github.com/flutter/dart-intellij-third-party/issues/704.
+private val DEFAULT_RESPONSE_TIMEOUT = 3.seconds
 
 private const val DART_PLUGIN_ID = "Dart"
 
@@ -128,7 +131,7 @@ private object UnifiedAnalytics {
 
       val completed = latch.await(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
       if (!completed) {
-        throw TimeoutException("Call to $SERVICE_NAME.$name timed out after $DEFAULT_RESPONSE_TIMEOUT.")
+        throw TimeoutException("Call to $SERVICE_NAME.$name timed out after $timeout.")
       }
 
     } catch (e: WebSocketException) {
@@ -194,8 +197,22 @@ private object AnalyticsConfigurationManager {
         return data
       }
 
+      // Older SDKs don't ship `dart tooling-daemon`; starting it would fail and every
+      // analytics call would time out. Keep the default (suppressed) configuration.
+      // See https://github.com/flutter/dart-intellij-third-party/issues/704.
+      if (!DartToolingDaemonService.isDartSdkVersionSufficient(sdk)) {
+        logger.debug("Dart SDK ${sdk.version} does not support DTD; analytics are suppressed.")
+        initLatch.countDown()
+        return data
+      }
+
       val dtdProcess = DTDProcess()
       dtdProcess.listener = object : DTDProcessListener {
+        override fun onProcessFailedToStart() {
+          logger.debug("DTD process failed to start; analytics are suppressed.")
+          initLatch.countDown()
+        }
+
         override fun onProcessStarted(uri: String?) {
           logger.debug("DartAnalysisServerService.onProcessStarted")
 
