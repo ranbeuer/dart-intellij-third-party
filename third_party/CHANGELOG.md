@@ -7,6 +7,7 @@
 - Error and UI freeze reporting to JetBrains Marketplace (#740)
 
 ### Changed
+- Routing pre-run execution error check and notification actions to the native Problems tool window when LSP is enabled (#688)
 
 ### Removed
 
