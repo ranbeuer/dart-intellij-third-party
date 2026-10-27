@@ -47,6 +47,12 @@ private const val DAS_NOTIFICATION_GROUP = "Dart Analysis Server"
 
 private val DEFAULT_RESPONSE_TIMEOUT = 1.seconds
 
+/// DTD can be slow to respond right after it starts (e.g. on IDE startup while
+/// indexing), so the startup configuration calls get a longer timeout. They run
+/// on a background thread, so this never blocks the UI.
+/// See https://github.com/flutter/dart-intellij-third-party/issues/704.
+private val STARTUP_RESPONSE_TIMEOUT = 3.seconds
+
 private const val DART_PLUGIN_ID = "Dart"
 
 private object UnifiedAnalytics {
@@ -112,7 +118,7 @@ private object UnifiedAnalytics {
     var value: JsonElement? = null
     try {
       val latch = CountDownLatch(1)
-      dtdProcess.sendRequest(
+      val requestId = dtdProcess.sendRequest(
         "$SERVICE_NAME.$name",
         params,
         true
@@ -128,24 +134,35 @@ private object UnifiedAnalytics {
 
       val completed = latch.await(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
       if (!completed) {
-        throw TimeoutException("Call to $SERVICE_NAME.$name timed out after $DEFAULT_RESPONSE_TIMEOUT.")
+        // Drop the pending consumer so it isn't retained for a response that may never come.
+        dtdProcess.cancelRequest(requestId)
+        throw TimeoutException("Call to $SERVICE_NAME.$name timed out after $timeout.")
       }
 
     } catch (e: WebSocketException) {
-      logger.error(e)
+      // Analytics failures must not surface as IDE internal errors.
+      logger.warn("Call to $SERVICE_NAME.$name failed: ${e.message}")
     }
     return value
   }
 
-  fun callServiceWithNoResponse(dtdProcess: DTDProcess, name: String) {
-    callServiceWithJsonResponse(dtdProcess, name)
+  fun callServiceWithNoResponse(dtdProcess: DTDProcess, name: String, timeout: Duration = DEFAULT_RESPONSE_TIMEOUT) {
+    callServiceWithJsonResponse(dtdProcess, name, timeout)
   }
 
-  fun callServiceWithStringResponse(dtdProcess: DTDProcess, name: String): String? =
-    callServiceWithJsonResponse(dtdProcess, name)?.asString
+  fun callServiceWithStringResponse(
+    dtdProcess: DTDProcess,
+    name: String,
+    timeout: Duration = DEFAULT_RESPONSE_TIMEOUT
+  ): String? =
+    callServiceWithJsonResponse(dtdProcess, name, timeout)?.asString
 
-  fun callServiceWithBoolResponse(dtdProcess: DTDProcess, name: String): Boolean =
-    callServiceWithJsonResponse(dtdProcess, name)?.asBoolean ?: false
+  fun callServiceWithBoolResponse(
+    dtdProcess: DTDProcess,
+    name: String,
+    timeout: Duration = DEFAULT_RESPONSE_TIMEOUT
+  ): Boolean =
+    callServiceWithJsonResponse(dtdProcess, name, timeout)?.asBoolean ?: false
 }
 
 class AnalyticsConfiguration {
@@ -194,8 +211,22 @@ private object AnalyticsConfigurationManager {
         return data
       }
 
+      // Older SDKs don't ship `dart tooling-daemon`; starting it would fail and every
+      // analytics call would time out. Keep the default (suppressed) configuration.
+      // See https://github.com/flutter/dart-intellij-third-party/issues/704.
+      if (!DartToolingDaemonService.isDartSdkVersionSufficient(sdk)) {
+        logger.debug("Dart SDK ${sdk.version} does not support DTD; analytics are suppressed.")
+        initLatch.countDown()
+        return data
+      }
+
       val dtdProcess = DTDProcess()
       dtdProcess.listener = object : DTDProcessListener {
+        override fun onProcessFailedToStart() {
+          logger.debug("DTD process failed to start; analytics are suppressed.")
+          initLatch.countDown()
+        }
+
         override fun onProcessStarted(uri: String?) {
           logger.debug("DartAnalysisServerService.onProcessStarted")
 
@@ -204,14 +235,20 @@ private object AnalyticsConfigurationManager {
 
           try {
             data.shouldShowMessage =
-              UnifiedAnalytics.callServiceWithBoolResponse(dtdProcess, UnifiedAnalytics.SHOULD_SHOW_MESSAGE)
+              UnifiedAnalytics.callServiceWithBoolResponse(
+                dtdProcess, UnifiedAnalytics.SHOULD_SHOW_MESSAGE, STARTUP_RESPONSE_TIMEOUT
+              )
             if (data.shouldShowMessage) {
               data.consentMessage =
-                UnifiedAnalytics.callServiceWithStringResponse(dtdProcess, UnifiedAnalytics.GET_CONSENT_MESSAGE)
+                UnifiedAnalytics.callServiceWithStringResponse(
+                  dtdProcess, UnifiedAnalytics.GET_CONSENT_MESSAGE, STARTUP_RESPONSE_TIMEOUT
+                )
               data.telemetryEnabled = false // No need to ask
             } else {
               data.telemetryEnabled =
-                UnifiedAnalytics.callServiceWithBoolResponse(dtdProcess, UnifiedAnalytics.TELEMETRY_ENABLED)
+                UnifiedAnalytics.callServiceWithBoolResponse(
+                  dtdProcess, UnifiedAnalytics.TELEMETRY_ENABLED, STARTUP_RESPONSE_TIMEOUT
+                )
             }
 
             // Update global suppression state (note that the default is to suppress).
@@ -219,12 +256,13 @@ private object AnalyticsConfigurationManager {
 
             if (data.shouldShowMessage) {
               // Process termination happens after the prompt.
-              scheduleConsentPromptNotification(project, dtdProcess)
+              scheduleConsentPromptNotification(project, dtdProcess, logger)
             } else {
               dtdProcess.terminate()
             }
           } catch (t: Throwable) {
-            logger.error(t)
+            // Fail gracefully: analytics stay suppressed (the default) and no IDE error is reported.
+            logger.warn("Failed to read unified analytics configuration; analytics are suppressed.", t)
             dtdProcess.terminate()
           } finally {
             initLatch.countDown()
@@ -250,7 +288,7 @@ private object AnalyticsConfigurationManager {
     return data
   }
 
-  private fun scheduleConsentPromptNotification(project: Project, dtdProcess: DTDProcess) {
+  private fun scheduleConsentPromptNotification(project: Project, dtdProcess: DTDProcess, logger: Logger) {
     ApplicationManager.getApplication().invokeLater {
       NotificationGroupManager.getInstance()
         .getNotificationGroup(DAS_NOTIFICATION_GROUP)
@@ -260,8 +298,16 @@ private object AnalyticsConfigurationManager {
               try {
                 notification.expire()
               } finally {
-                UnifiedAnalytics.callServiceWithNoResponse(dtdProcess, UnifiedAnalytics.CLIENT_SHOWED_MESSAGE)
-                dtdProcess.terminate()
+                // actionPerformed runs on the EDT; do the blocking DTD call in the background.
+                ApplicationManager.getApplication().executeOnPooledThread {
+                  try {
+                    UnifiedAnalytics.callServiceWithNoResponse(dtdProcess, UnifiedAnalytics.CLIENT_SHOWED_MESSAGE)
+                  } catch (t: Throwable) {
+                    logger.warn("Failed to confirm the analytics consent message was shown.", t)
+                  } finally {
+                    dtdProcess.terminate()
+                  }
+                }
               }
             }
           })
