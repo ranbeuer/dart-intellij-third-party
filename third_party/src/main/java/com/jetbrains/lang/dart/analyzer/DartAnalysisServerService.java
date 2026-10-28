@@ -147,6 +147,7 @@ import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.io.File;
 import java.net.URI;
@@ -569,14 +570,25 @@ public final class DartAnalysisServerService implements Disposable {
                                                          boolean supportsLspDiagnostics,
                                                          boolean supportsLspClosingLabels,
                                                          boolean supportsLspCodeActions) {
+    return buildLspCapabilities(sdkVersion, supportsLspDiagnostics, supportsLspClosingLabels, supportsLspCodeActions, false);
+  }
+
+  public static @NotNull JsonObject buildLspCapabilities(@NotNull String sdkVersion,
+                                                         boolean supportsLspDiagnostics,
+                                                         boolean supportsLspClosingLabels,
+                                                         boolean supportsLspCodeActions,
+                                                         boolean supportsLspConfiguration) {
     JsonObject lspCapabilities = new JsonObject();
 
     JsonObject workspace = new JsonObject();
 
-    // Without this the server never asks for the `dart` configuration section, so the settings of
-    // Settings | Editor | Inlay Hints would never reach it. It is advertised unconditionally: a
-    // server that does not support `workspace/configuration` parses and ignores it.
-    workspace.addProperty("configuration", true);
+    if (supportsLspConfiguration) {
+      // Without this the server never asks for the `dart` configuration section, so the settings of
+      // Settings | Editor | Inlay Hints would never reach it. It is only advertised once the
+      // DartBridgeLspServer is connected to the LSP client, so workspace/configuration is handled
+      // through DartBridgeLspServer -> DartLspServerDescriptor.getWorkspaceConfiguration.
+      workspace.addProperty("configuration", true);
+    }
 
     if (isDartSdkVersionSufficientForWorkspaceApplyEdits(sdkVersion)) {
       workspace.addProperty("applyEdit", true);
@@ -590,7 +602,9 @@ public final class DartAnalysisServerService implements Disposable {
       workspace.add("fileOperations", fileOperations);
     }
 
-    lspCapabilities.add("workspace", workspace);
+    if (workspace.size() > 0) {
+      lspCapabilities.add("workspace", workspace);
+    }
 
     JsonObject textDocument = new JsonObject();
 
@@ -2676,6 +2690,19 @@ public final class DartAnalysisServerService implements Disposable {
     }
   }
 
+  /**
+   * Stops the analysis server and waits (bounded) for its process to exit, so that
+   * shutdown-time side effects such as flushing analytics have happened on return.
+   * <p>
+   * Blocks the calling thread for up to {@code SEND_REQUEST_TIMEOUT}, plus the time
+   * {@code StdioServerSocket.stop()} needs to force the process down if it doesn't exit.
+   */
+  @TestOnly
+  public void stopServer_TESTS_ONLY() {
+    assert ApplicationManager.getApplication().isUnitTestMode();
+    stopServer();
+  }
+
   public void waitForAnalysisToComplete_TESTS_ONLY(final @NotNull VirtualFile file) {
     assert ApplicationManager.getApplication().isUnitTestMode();
 
@@ -2900,6 +2927,11 @@ public final class DartAnalysisServerService implements Disposable {
   }
 
   public void updateClientCapabilities() {
+    DartBridgeLspServerManager bridgeManager = myProject.getServiceIfCreated(DartBridgeLspServerManager.class);
+    updateClientCapabilities(bridgeManager != null && bridgeManager.isClientConnected());
+  }
+
+  public void updateClientCapabilities(boolean supportsLspConfiguration) {
     final RemoteAnalysisServerImpl server = myServer;
     if (server != null) {
       boolean supportsUris = isDartSdkVersionSufficientForFileUri(mySdkVersion);
@@ -2908,7 +2940,11 @@ public final class DartAnalysisServerService implements Disposable {
       boolean supportsLspCodeActions = isLspCodeActionsEnabled(myProject);
       server.server_setClientCapabilities(List.of("openUrlRequest", "showMessageRequest"),
                                           supportsUris,
-                                          buildLspCapabilities(mySdkVersion, supportsLspDiagnostics, supportsLspClosingLabels, supportsLspCodeActions));
+                                          buildLspCapabilities(mySdkVersion,
+                                                               supportsLspDiagnostics,
+                                                               supportsLspClosingLabels,
+                                                               supportsLspCodeActions,
+                                                               supportsLspConfiguration));
     }
   }
 
