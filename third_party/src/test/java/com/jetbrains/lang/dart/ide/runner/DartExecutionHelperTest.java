@@ -10,6 +10,7 @@ import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 import com.jetbrains.lang.dart.DartBundle;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
+import com.jetbrains.lang.dart.lsp.DartBridgeLspServerManager;
 import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import org.dartlang.analysis.server.protocol.AnalysisError;
 import org.dartlang.analysis.server.protocol.AnalysisErrorSeverity;
@@ -167,6 +168,37 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
     setLspEnabled(true);
     DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
     assertOpenProblemsNotification();
+  }
+
+  /**
+   * After the experimental LSP setting is toggled, the server re-sends identical errors through the newly active path.
+   * They must not be dropped as duplicates, otherwise editor highlighting and the Problems tool window go stale.
+   */
+  public void testIdenticalErrorsAreReprocessedAfterLspSettingChanged() {
+    VirtualFile file = addMainFile();
+    DartAnalysisServerService das = DartAnalysisServerService.getInstance(getProject());
+
+    reportError(file);
+    assertTrue(das.hasErrorsHashForFile(file.getPath()));
+
+    das.onExperimentalLspSettingChanged();
+    assertFalse("Error hashes must be forgotten so identical errors are re-processed", das.hasErrorsHashForFile(file.getPath()));
+
+    reportError(file);
+    assertTrue(das.hasErrorsHashForFile(file.getPath()));
+  }
+
+  /**
+   * When LSP is re-enabled the bridge is restarted and diagnostics published while it was down are lost, so the next LSP
+   * client `initialize` must trigger a DAS re-analysis exactly once.
+   */
+  public void testReanalyzeRequestIsConsumedOnce() {
+    DartBridgeLspServerManager manager = getProject().getService(DartBridgeLspServerManager.class);
+    assertFalse(manager.consumeReanalyzeOnNextClientInitialize());
+
+    manager.requestReanalyzeOnNextClientInitialize();
+    assertTrue(manager.consumeReanalyzeOnNextClientInitialize());
+    assertFalse("Re-analysis must only be triggered once per request", manager.consumeReanalyzeOnNextClientInitialize());
   }
 
   public void testClearIssueNotifications() {
