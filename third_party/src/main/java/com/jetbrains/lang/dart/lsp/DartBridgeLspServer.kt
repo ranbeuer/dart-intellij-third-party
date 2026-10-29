@@ -375,6 +375,12 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         logger.info("Initialize called")
         initialized = true
         das.updateClientCapabilities(true)
+        if (project.getService(DartBridgeLspServerManager::class.java).consumeReanalyzeOnNextClientInitialize()) {
+            // The bridge was restarted because the experimental LSP setting was toggled. Diagnostics published while it
+            // was down were lost, so ask DAS to re-analyze and re-send them to this newly connected client.
+            logger.info("Re-analyzing after experimental LSP setting change")
+            das.analysis_reanalyze()
+        }
         val capabilities = ServerCapabilities().apply {
             setHoverProvider(true)
             setDefinitionProvider(true)
