@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.GlobalSearchScopesCore;
 import com.intellij.util.containers.ContainerUtil;
@@ -16,7 +15,6 @@ import com.jetbrains.lang.dart.DartFileType;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.analyzer.DartServerData;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
-import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.jetbrains.lang.dart.util.PubspecYamlUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -46,10 +44,11 @@ public final class DartExecutionHelper {
 
   @VisibleForTesting
   static boolean hasErrors(final @NotNull Project project, final @NotNull GlobalSearchScope scope) {
-    if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) {
-      return WolfTheProblemSolver.getInstance(project).hasProblemFilesBeneath(scope::contains);
-    }
-
+    // DartServerData is the single source of truth for errors regardless of the experimental LSP setting: it is populated
+    // both by legacy DAS `analysis.errors` notifications and by LSP `textDocument/publishDiagnostics` notifications
+    // (see DartAnalysisServerService.onLspDiagnosticsUpdated()). WolfTheProblemSolver must not be used here: it only knows
+    // about files that have been highlighted in an editor, and it goes stale when the experimental LSP setting is toggled
+    // and the server restarts.
     DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
     List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
     return !errors.isEmpty();
