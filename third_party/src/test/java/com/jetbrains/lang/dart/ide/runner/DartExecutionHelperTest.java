@@ -4,105 +4,34 @@ package com.jetbrains.lang.dart.ide.runner;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.Notification;
 import com.intellij.openapi.actionSystem.AnAction;
-import com.intellij.openapi.module.Module;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.problems.Problem;
-import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.testFramework.ServiceContainerUtil;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 import com.jetbrains.lang.dart.DartBundle;
+import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
 import com.jetbrains.lang.dart.sdk.DartConfigurable;
+import org.dartlang.analysis.server.protocol.AnalysisError;
+import org.dartlang.analysis.server.protocol.AnalysisErrorSeverity;
+import org.dartlang.analysis.server.protocol.AnalysisErrorType;
+import org.dartlang.analysis.server.protocol.Location;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.Collection;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
-public class DartExecutionHelperTest extends BasePlatformTestCase {
+/**
+ * Uses {@link CodeInsightFixtureTestCase} (real local file system) because {@code DartServerData.getErrors(scope)} only
+ * considers {@code DartLocalFileInfo} entries, which are resolved through {@code LocalFileSystem}.
+ */
+public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
 
-  private TestWolfSolver myWolfSolver;
-
-  private static class TestWolfSolver extends WolfTheProblemSolver {
-    private final Set<VirtualFile> problemFiles = new HashSet<>();
-
-    @Override
-    public boolean isProblemFile(VirtualFile file) {
-      return problemFiles.contains(file);
-    }
-
-    @Override
-    public void weHaveGotProblems(VirtualFile virtualFile, List<? extends Problem> problems) {
-      problemFiles.add(virtualFile);
-    }
-
-    @Override
-    public void weHaveGotNonIgnorableProblems(VirtualFile virtualFile, List<? extends Problem> problems) {
-      problemFiles.add(virtualFile);
-    }
-
-    @Override
-    public boolean hasProblemFilesBeneath(Condition<? super VirtualFile> condition) {
-      for (VirtualFile file : problemFiles) {
-        if (condition.value(file)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    @Override
-    public boolean hasSyntaxErrors(VirtualFile file) {
-      return false;
-    }
-
-    @Override
-    public boolean hasProblemFilesBeneath(Module scope) {
-      return false;
-    }
-
-    @Override
-    public void clearProblems(VirtualFile file) {
-      problemFiles.remove(file);
-    }
-
-    @Override
-    public Problem convertToProblem(VirtualFile file, int line, int column, String[] message) {
-      return null;
-    }
-
-    @Override
-    public void reportProblems(VirtualFile file, Collection<? extends Problem> problems) {
-      problemFiles.add(file);
-    }
-
-    @Override
-    public void reportProblemsFromExternalSource(VirtualFile file, Object source) {
-      problemFiles.add(file);
-    }
-
-    @Override
-    public void clearProblemsFromExternalSource(VirtualFile file, Object source) {
-      problemFiles.remove(file);
-    }
-
-    @Override
-    public void queue(VirtualFile file) {}
-  }
-
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    myWolfSolver = new TestWolfSolver();
-    ServiceContainerUtil.replaceService(getProject(), WolfTheProblemSolver.class, myWolfSolver, getTestRootDisposable());
-  }
+  private static final String LSP_EXPERIMENTAL_KEY = "dart.lsp.experimental.enabled";
 
   @Override
   public void tearDown() throws Exception {
     try {
-      PropertiesComponent.getInstance(getProject()).unsetValue("dart.lsp.experimental.enabled");
+      PropertiesComponent.getInstance(getProject()).unsetValue(LSP_EXPERIMENTAL_KEY);
       DartProblemsView.getInstance(getProject()).clearNotifications();
     }
     catch (Throwable e) {
@@ -113,103 +42,131 @@ public class DartExecutionHelperTest extends BasePlatformTestCase {
     }
   }
 
-  public void testHasErrorsLspEnabledWithoutErrors() {
-    assertTrue(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+  private void setLspEnabled(boolean enabled) {
+    PropertiesComponent.getInstance(getProject()).setValue(LSP_EXPERIMENTAL_KEY, enabled, true);
+    assertEquals(enabled, DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+  }
 
-    VirtualFile file = myFixture.addFileToProject("lib/main.dart", "void main() {}\n").getVirtualFile();
+  private @NotNull VirtualFile addMainFile() {
+    return myFixture.addFileToProject("lib/main.dart", "void main() { brokenSyntax }\n").getVirtualFile();
+  }
+
+  /**
+   * Simulates the analysis server reporting an error for {@code file}. In LSP mode this is exactly what
+   * {@code DartBridgeLspServer.handlePublishDiagnostics()} does with every {@code textDocument/publishDiagnostics} notification.
+   */
+  private void reportError(@NotNull VirtualFile file) {
+    Location location = new Location(file.getPath(), 14, 12, 1, 15, 1, 27);
+    AnalysisError error = new AnalysisError(AnalysisErrorSeverity.ERROR, AnalysisErrorType.SYNTACTIC_ERROR, location,
+                                            "Expected ';'", null, "expected_token", null, null, false);
+    DartAnalysisServerService.getInstance(getProject()).onLspDiagnosticsUpdated(file.getPath(), List.of(error));
+  }
+
+  private void clearErrors(@NotNull VirtualFile file) {
+    DartAnalysisServerService.getInstance(getProject()).onLspDiagnosticsUpdated(file.getPath(), Collections.emptyList());
+  }
+
+  private void assertNotificationShownWithAction(@NotNull String expectedActionText, @NotNull String unexpectedActionText) {
+    Notification notification = DartProblemsView.getInstance(getProject()).getNotification();
+    assertNotNull("Pre-run error notification should be shown", notification);
+
+    boolean hasExpected = false;
+    boolean hasUnexpected = false;
+    for (AnAction action : notification.getActions()) {
+      if (expectedActionText.equals(action.getTemplateText())) hasExpected = true;
+      if (unexpectedActionText.equals(action.getTemplateText())) hasUnexpected = true;
+    }
+
+    assertTrue("Notification should contain '" + expectedActionText + "' action", hasExpected);
+    assertFalse("Notification should not contain '" + unexpectedActionText + "' action", hasUnexpected);
+  }
+
+  private void assertOpenProblemsNotification() {
+    assertNotificationShownWithAction(DartBundle.message("notification.open.problems.action.text"),
+                                      DartBundle.message("notification.open.dart.analysis.action.text"));
+  }
+
+  private void assertOpenDartAnalysisNotification() {
+    assertNotificationShownWithAction(DartBundle.message("notification.open.dart.analysis.action.text"),
+                                      DartBundle.message("notification.open.problems.action.text"));
+  }
+
+  public void testHasErrorsWithoutErrors() {
+    VirtualFile file = addMainFile();
     GlobalSearchScope scope = DartExecutionHelper.getScopeOfFilesThatMayAffectExecution(getProject(), file);
     assertNotNull(scope);
 
+    setLspEnabled(true);
+    assertFalse(DartExecutionHelper.hasErrors(getProject(), scope));
+
+    setLspEnabled(false);
     assertFalse(DartExecutionHelper.hasErrors(getProject(), scope));
   }
 
-  public void testHasErrorsLspEnabledWithWolfReportedError() {
-    assertTrue(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
-
-    VirtualFile file = myFixture.addFileToProject("lib/main.dart", "void main() {}\n").getVirtualFile();
+  public void testHasErrorsWithReportedErrorInBothModes() {
+    VirtualFile file = addMainFile();
     GlobalSearchScope scope = DartExecutionHelper.getScopeOfFilesThatMayAffectExecution(getProject(), file);
     assertNotNull(scope);
+    reportError(file);
 
-    myWolfSolver.reportProblemsFromExternalSource(file, "LSP");
+    setLspEnabled(true);
     assertTrue(DartExecutionHelper.hasErrors(getProject(), scope));
-  }
 
-  public void testHasErrorsLspDisabledDoesNotQueryWolf() {
-    PropertiesComponent.getInstance(getProject()).setValue("dart.lsp.experimental.enabled", false, true);
-    assertFalse(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+    setLspEnabled(false);
+    assertTrue(DartExecutionHelper.hasErrors(getProject(), scope));
 
-    VirtualFile file = myFixture.addFileToProject("lib/main.dart", "void main() {}\n").getVirtualFile();
-    GlobalSearchScope scope = DartExecutionHelper.getScopeOfFilesThatMayAffectExecution(getProject(), file);
-    assertNotNull(scope);
-
-    // Even if Wolf solver has problems, legacy DAS has none in this test setup
-    myWolfSolver.reportProblemsFromExternalSource(file, "LSP");
+    clearErrors(file);
     assertFalse(DartExecutionHelper.hasErrors(getProject(), scope));
   }
 
-  public void testDisplayIssuesLspEnabledNoErrorsDoesNotNotify() {
-    assertTrue(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+  public void testDisplayIssuesNoErrorsDoesNotNotify() {
+    VirtualFile file = addMainFile();
+    setLspEnabled(true);
 
-    VirtualFile file = myFixture.addFileToProject("lib/main.dart", "void main() {}\n").getVirtualFile();
     DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
 
     assertNull(DartProblemsView.getInstance(getProject()).getNotification());
   }
 
-  public void testDisplayIssuesLspEnabledWithErrorsShowsOpenProblemsNotification() {
-    assertTrue(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
-
-    VirtualFile file = myFixture.addFileToProject("lib/main.dart", "void main() {}\n").getVirtualFile();
-    myWolfSolver.reportProblemsFromExternalSource(file, "LSP");
+  public void testDisplayIssuesLspEnabledShowsOpenProblemsNotification() {
+    VirtualFile file = addMainFile();
+    reportError(file);
+    setLspEnabled(true);
 
     DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
 
-    Notification notification = DartProblemsView.getInstance(getProject()).getNotification();
-    assertNotNull(notification);
-
-    String openProblemsText = DartBundle.message("notification.open.problems.action.text");
-    String openDartAnalysisText = DartBundle.message("notification.open.dart.analysis.action.text");
-
-    boolean hasOpenProblems = false;
-    boolean hasOpenDartAnalysis = false;
-    for (AnAction action : notification.getActions()) {
-      if (openProblemsText.equals(action.getTemplateText())) {
-        hasOpenProblems = true;
-      }
-      if (openDartAnalysisText.equals(action.getTemplateText())) {
-        hasOpenDartAnalysis = true;
-      }
-    }
-
-    assertTrue("Notification should contain 'Open Problems' action under LSP", hasOpenProblems);
-    assertFalse("Notification should not contain 'Open Dart Analysis' action under LSP", hasOpenDartAnalysis);
+    assertOpenProblemsNotification();
   }
 
   public void testDisplayIssuesLspDisabledShowsOpenDartAnalysisNotification() {
-    PropertiesComponent.getInstance(getProject()).setValue("dart.lsp.experimental.enabled", false, true);
-    assertFalse(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+    VirtualFile file = addMainFile();
+    reportError(file);
+    setLspEnabled(false);
 
-    DartProblemsView.getInstance(getProject()).showErrorNotification("Error Title", "Error Content", null, true);
+    DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
 
-    Notification notification = DartProblemsView.getInstance(getProject()).getNotification();
-    assertNotNull(notification);
+    assertOpenDartAnalysisNotification();
+  }
 
-    String openProblemsText = DartBundle.message("notification.open.problems.action.text");
-    String openDartAnalysisText = DartBundle.message("notification.open.dart.analysis.action.text");
+  /**
+   * Regression test for the scenario: enable LSP and run, disable LSP and run, re-enable LSP and run.
+   * The notification must be shown every time, with the action matching the current setting.
+   */
+  public void testDisplayIssuesAfterTogglingLspSetting() {
+    VirtualFile file = addMainFile();
+    reportError(file);
 
-    boolean hasOpenProblems = false;
-    boolean hasOpenDartAnalysis = false;
-    for (AnAction action : notification.getActions()) {
-      if (openProblemsText.equals(action.getTemplateText())) {
-        hasOpenProblems = true;
-      }
-      if (openDartAnalysisText.equals(action.getTemplateText())) {
-        hasOpenDartAnalysis = true;
-      }
-    }
+    setLspEnabled(true);
+    DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
+    assertOpenProblemsNotification();
 
-    assertFalse("Notification should not contain 'Open Problems' action when LSP is disabled", hasOpenProblems);
-    assertTrue("Notification should contain 'Open Dart Analysis' action when LSP is disabled", hasOpenDartAnalysis);
+    setLspEnabled(false);
+    DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
+    assertOpenDartAnalysisNotification();
+
+    setLspEnabled(true);
+    DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
+    assertOpenProblemsNotification();
   }
 
   public void testClearIssueNotifications() {
