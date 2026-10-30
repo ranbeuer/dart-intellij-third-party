@@ -35,13 +35,23 @@ public final class DartExecutionHelper {
     GlobalSearchScope scope = getScopeOfFilesThatMayAffectExecution(project, launchFile);
     if (scope == null) return;
 
-    DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
-    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
-    if (errors.isEmpty()) return;
+    if (!hasErrors(project, scope)) return;
 
     // Show a notification on the dart analysis tool window.
     final DartProblemsView problemsView = DartProblemsView.getInstance(project);
     problemsView.showErrorNotification("", message, icon, true);
+  }
+
+  @VisibleForTesting
+  static boolean hasErrors(final @NotNull Project project, final @NotNull GlobalSearchScope scope) {
+    // DartServerData is the single source of truth for errors regardless of the experimental LSP setting: it is populated
+    // both by legacy DAS `analysis.errors` notifications and by LSP `textDocument/publishDiagnostics` notifications
+    // (see DartAnalysisServerService.onLspDiagnosticsUpdated()). WolfTheProblemSolver must not be used here: it only knows
+    // about files that have been highlighted in an editor, and it goes stale when the experimental LSP setting is toggled
+    // and the server restarts.
+    DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
+    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
+    return !errors.isEmpty();
   }
 
   public static void clearIssueNotifications(final @NotNull Project project) {
