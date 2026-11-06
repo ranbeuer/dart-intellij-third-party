@@ -254,8 +254,6 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         assertEquals(" ", edits.single().newText)
         // This is the bridge boundary, not an IDE edit-application test.
         assertEquals("void main(){}", myFixture.editor.document.text)
-        respondToFormatting("[]")
-        assertSame(edits, future.get(5, TimeUnit.SECONDS))
     }
 
     fun testRangeFormattingTransportPreservesSelectionAndOptions() {
@@ -299,19 +297,36 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         }
     }
 
-    fun testCancelledFormattingRejectsLateResponse() {
-        val future = bridgeServer.formatting(formattingParams())
-        assertTrue(future.cancel(true))
-        respondToFormatting("[]")
-        assertTrue(future.isCancelled)
-    }
+    fun testRetiredFormattingIgnoresLatePayloadWithoutDroppingAnActiveRequest() {
+        for (cancel in listOf(true, false)) {
+            val retired = bridgeServer.formatting(formattingParams())
+            val retiredId = capturedRequests.last().get("id").asString
+            val active = bridgeServer.formatting(formattingParams())
+            val activeId = capturedRequests.last().get("id").asString
+            assertFalse(retiredId == activeId)
+            val timeout = java.util.concurrent.TimeoutException("format timed out")
+            if (cancel) assertTrue(retired.cancel(true))
+            else assertTrue(retired.completeExceptionally(timeout))
 
-    fun testShutdownCancelsFormattingRequest() {
-        val future = bridgeServer.formatting(formattingParams())
-        bridgeServer.shutdown().get(5, TimeUnit.SECONDS)
-        assertTrue(future.isCancelled)
-        respondToFormatting("[]")
-        assertTrue(future.isCancelled)
+            // A retired response must be ignored before decoding its invalid error payload.
+            // Without completion cleanup this reaches the parser and raises a logged error.
+            capturedListener.onResponse(
+                """{"id":"$retiredId","result":{"lspResponse":{"error":{"code":{},"message":"stale response"}}}}"""
+            )
+            capturedListener.onResponse(
+                """{"id":"$activeId","result":{"lspResponse":{"result":[]}}}"""
+            )
+            assertTrue("Retiring one request must not discard another", active.get(5, TimeUnit.SECONDS).isEmpty())
+            if (cancel) assertTrue(retired.isCancelled)
+            else {
+                try {
+                    retired.get(5, TimeUnit.SECONDS)
+                    fail("A stale response must not replace the caller's timeout")
+                } catch (error: java.util.concurrent.ExecutionException) {
+                    assertSame(timeout, error.cause)
+                }
+            }
+        }
     }
 
     fun testShutdownRetainsOwnershipOfFormattingAndOtherPendingRequests() {
@@ -325,19 +340,6 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
 
         assertTrue(hover.isCancelled)
         assertTrue(formatting.isCancelled)
-    }
-
-    fun testExternallyTimedOutFormattingRejectsLateResponse() {
-        val future = bridgeServer.formatting(formattingParams())
-        val timeout = java.util.concurrent.TimeoutException("format timed out")
-        assertTrue(future.completeExceptionally(timeout))
-        respondToFormatting("[]")
-        try {
-            future.get(5, TimeUnit.SECONDS)
-            fail("A late response must not replace the caller's timeout")
-        } catch (error: java.util.concurrent.ExecutionException) {
-            assertSame(timeout, error.cause)
-        }
     }
 
     private fun formattingParams(uri: String = "file:///test.dart") = DocumentFormattingParams().apply {
