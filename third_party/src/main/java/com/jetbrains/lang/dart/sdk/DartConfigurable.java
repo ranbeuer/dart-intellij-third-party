@@ -404,12 +404,17 @@ public final class DartConfigurable implements SearchableConfigurable, NoScroll,
 
     if (myEnableDartSupportCheckBox.isSelected() && initialExperimentalEnabled != currentExperimentalEnabled) {
       DartBridgeLspServerManager bridgeManager = myProject.getService(DartBridgeLspServerManager.class);
+      if (currentExperimentalEnabled) {
+        // Diagnostics published while the bridge is down are lost; have DAS re-send them once the LSP client reconnects.
+        bridgeManager.requestReanalyzeOnNextClientInitialize();
+      }
       bridgeManager.stopBridgeServer();
       DartAnalysisServerService dasService = DartAnalysisServerService.getInstance(myProject);
       dasService.updateClientCapabilities();
       dasService.updateSubscriptions();
       DaemonCodeAnalyzer.getInstance(myProject).restart("Dart settings changed");
       bridgeManager.startBridgeServer();
+      DartAnalysisServerService.getInstance(myProject).onExperimentalLspSettingChanged();
     }
 
     reset(); // because we rely on remembering initial state
