@@ -21,7 +21,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.util.List;
 
 public final class DartExecutionHelper {
   private DartExecutionHelper() {}
@@ -50,8 +49,7 @@ public final class DartExecutionHelper {
     // about files that have been highlighted in an editor, and it goes stale when the experimental LSP setting is toggled
     // and the server restarts.
     DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
-    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
-    return !errors.isEmpty();
+    return ContainerUtil.exists(das.getErrors(scope), DartServerData.DartError::isError);
   }
 
   public static void clearIssueNotifications(final @NotNull Project project) {

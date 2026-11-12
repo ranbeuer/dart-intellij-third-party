@@ -145,6 +145,15 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
     return ToolWindowManager.getInstance(myProject).getToolWindow(TOOLWINDOW_ID);
   }
 
+  private void activateProblemsToolWindow() {
+    ToolWindow toolWindow = DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)
+                            ? ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW)
+                            : getDartAnalysisToolWindow();
+    if (toolWindow != null) {
+      toolWindow.activate(null);
+    }
+  }
+
   private @Nullable DartProblemsViewPanel getProblemsViewPanel() {
     ToolWindow toolWindow = getDartAnalysisToolWindow();
     Content content = toolWindow != null ? toolWindow.getContentManager().getContent(0) : null;
@@ -227,30 +236,13 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
       .createNotification(title, StringUtil.notNullize(content), notificationType);
 
     if (addOpenAnalysisAction) {
-      if (DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)) {
-        notification.addAction(NotificationAction.createSimple(
-          DartBundle.message("notification.open.problems.action.text"),
-          () -> {
-            notification.expire();
-            ToolWindow toolWindow = ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW);
-            if (toolWindow != null) {
-              toolWindow.activate(null);
-            }
-          }
-        ));
-      }
-      else {
-        notification.addAction(NotificationAction.createSimple(
-          DartBundle.message("notification.open.dart.analysis.action.text"),
-          () -> {
-            notification.expire();
-            ToolWindow toolWindow = getDartAnalysisToolWindow();
-            if (toolWindow != null) {
-              toolWindow.activate(null);
-            }
-          }
-        ));
-      }
+      String actionText = DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)
+                          ? DartBundle.message("notification.open.problems.action.text")
+                          : DartBundle.message("notification.open.dart.analysis.action.text");
+      notification.addAction(NotificationAction.createSimple(actionText, () -> {
+        notification.expire();
+        activateProblemsToolWindow();
+      }));
     }
 
     if (content != null && content.contains("open.dart.analysis")) {
@@ -258,12 +250,7 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
       notification.setListener((n, e) -> {
         if ("open.dart.analysis".equals(e.getDescription())) {
           n.expire();
-          ToolWindow toolWindow = DartConfigurable.isExperimentalLspFeaturesEnabled(myProject)
-            ? ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW)
-            : getDartAnalysisToolWindow();
-          if (toolWindow != null) {
-            toolWindow.activate(null);
-          }
+          activateProblemsToolWindow();
         }
       });
     }

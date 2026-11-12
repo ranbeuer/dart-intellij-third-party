@@ -47,7 +47,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
-import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -3017,15 +3016,12 @@ public final class DartAnalysisServerService implements Disposable {
    * {@code publishDiagnostics} path (rendered by the LSP client). The server typically re-sends exactly the same errors after
    * the switch, which {@link #processComputedErrors} would otherwise drop as duplicates, leaving the editor highlighting (and
    * therefore the IntelliJ Problems tool window) stale. Forget the per-file error hashes so that the re-sent errors are
-   * processed again, and restart highlighting so that open editors are re-annotated by the now-active path.
+   * processed again.
    */
   public void onExperimentalLspSettingChanged() {
     synchronized (myFilePathsWithErrors) {
       myFilePathToErrorsHash.clear();
     }
-    ApplicationManager.getApplication().invokeLater(() -> DaemonCodeAnalyzer.getInstance(myProject).restart(),
-                                                    ModalityState.nonModal(),
-                                                    myProject.getDisposed());
   }
 
   @VisibleForTesting
