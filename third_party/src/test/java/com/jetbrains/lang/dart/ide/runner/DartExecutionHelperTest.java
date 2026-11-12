@@ -22,8 +22,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Uses {@link CodeInsightFixtureTestCase} (real local file system) because {@code DartServerData.getErrors(scope)} only
- * considers {@code DartLocalFileInfo} entries, which are resolved through {@code LocalFileSystem}.
+ * Uses {@link CodeInsightFixtureTestCase} (real local file system) because {@code DartLocalFileInfo} entries are resolved
+ * through {@code LocalFileSystem}.
  */
 public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
 
@@ -33,7 +33,9 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
   public void tearDown() throws Exception {
     try {
       PropertiesComponent.getInstance(getProject()).unsetValue(LSP_EXPERIMENTAL_KEY);
-      DartProblemsView.getInstance(getProject()).clearNotifications();
+      DartProblemsView problemsView = DartProblemsView.getInstance(getProject());
+      problemsView.clearAll();
+      problemsView.clearNotifications();
     }
     catch (Throwable e) {
       addSuppressedException(e);
@@ -52,19 +54,22 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
     return myFixture.addFileToProject("lib/main.dart", "void main() { brokenSyntax }\n").getVirtualFile();
   }
 
+  private static @NotNull AnalysisError createSyntaxError(@NotNull VirtualFile file) {
+    Location location = new Location(file.getPath(), 14, 12, 1, 15, 1, 27);
+    return new AnalysisError(AnalysisErrorSeverity.ERROR, AnalysisErrorType.SYNTACTIC_ERROR, location,
+                             "Expected ';'", null, "expected_token", null, null, false);
+  }
+
   /**
-   * Simulates the analysis server reporting an error for {@code file}. In LSP mode this is exactly what
-   * {@code DartBridgeLspServer.handlePublishDiagnostics()} does with every {@code textDocument/publishDiagnostics} notification.
+   * Simulates an analysis error being reported to {@link DartProblemsView}, which receives diagnostics from both
+   * {@code DartLsp4jClient.publishDiagnostics()} in LSP mode and {@code DartAnalysisServerService} in legacy DAS mode.
    */
   private void reportError(@NotNull VirtualFile file) {
-    Location location = new Location(file.getPath(), 14, 12, 1, 15, 1, 27);
-    AnalysisError error = new AnalysisError(AnalysisErrorSeverity.ERROR, AnalysisErrorType.SYNTACTIC_ERROR, location,
-                                            "Expected ';'", null, "expected_token", null, null, false);
-    DartAnalysisServerService.getInstance(getProject()).onLspDiagnosticsUpdated(file.getPath(), List.of(error));
+    DartProblemsView.getInstance(getProject()).updateErrorsForFile(file.getPath(), List.of(createSyntaxError(file)));
   }
 
   private void clearErrors(@NotNull VirtualFile file) {
-    DartAnalysisServerService.getInstance(getProject()).onLspDiagnosticsUpdated(file.getPath(), Collections.emptyList());
+    DartProblemsView.getInstance(getProject()).updateErrorsForFile(file.getPath(), Collections.emptyList());
   }
 
   private void assertNotificationShownWithAction(@NotNull String expectedActionText, @NotNull String unexpectedActionText) {
@@ -177,14 +182,15 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
   public void testIdenticalErrorsAreReprocessedAfterLspSettingChanged() {
     VirtualFile file = addMainFile();
     DartAnalysisServerService das = DartAnalysisServerService.getInstance(getProject());
+    List<AnalysisError> errors = List.of(createSyntaxError(file));
 
-    reportError(file);
+    das.onLspDiagnosticsUpdated(file.getPath(), errors);
     assertTrue(das.hasErrorsHashForFile(file.getPath()));
 
     das.onExperimentalLspSettingChanged();
     assertFalse("Error hashes must be forgotten so identical errors are re-processed", das.hasErrorsHashForFile(file.getPath()));
 
-    reportError(file);
+    das.onLspDiagnosticsUpdated(file.getPath(), errors);
     assertTrue(das.hasErrorsHashForFile(file.getPath()));
   }
 

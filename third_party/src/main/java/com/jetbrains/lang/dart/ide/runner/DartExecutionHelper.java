@@ -10,10 +10,7 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.GlobalSearchScopesCore;
-import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.lang.dart.DartFileType;
-import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
-import com.jetbrains.lang.dart.analyzer.DartServerData;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
 import com.jetbrains.lang.dart.util.PubspecYamlUtil;
 import org.jetbrains.annotations.Nls;
@@ -21,7 +18,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.util.List;
 
 public final class DartExecutionHelper {
   private DartExecutionHelper() {}
@@ -44,14 +40,11 @@ public final class DartExecutionHelper {
 
   @VisibleForTesting
   static boolean hasErrors(final @NotNull Project project, final @NotNull GlobalSearchScope scope) {
-    // DartServerData is the single source of truth for errors regardless of the experimental LSP setting: it is populated
-    // both by legacy DAS `analysis.errors` notifications and by LSP `textDocument/publishDiagnostics` notifications
-    // (see DartAnalysisServerService.onLspDiagnosticsUpdated()). WolfTheProblemSolver must not be used here: it only knows
-    // about files that have been highlighted in an editor, and it goes stale when the experimental LSP setting is toggled
-    // and the server restarts.
-    DartAnalysisServerService das = DartAnalysisServerService.getInstance(project);
-    List<DartServerData.DartError> errors = ContainerUtil.filter(das.getErrors(scope), DartServerData.DartError::isError);
-    return !errors.isEmpty();
+    // DartProblemsView is the single source of truth for errors across both LSP and legacy DAS modes: it is populated
+    // by DartLsp4jClient.publishDiagnostics() in LSP mode and by DartAnalysisServerService in legacy DAS mode.
+    // WolfTheProblemSolver must not be used here: it only knows about files that have been highlighted in an editor,
+    // and it goes stale when the experimental LSP setting is toggled and the server restarts.
+    return DartProblemsView.getInstance(project).hasErrorsInScope(scope);
   }
 
   public static void clearIssueNotifications(final @NotNull Project project) {
