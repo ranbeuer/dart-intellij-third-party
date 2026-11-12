@@ -121,6 +121,7 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
     LanguageClientAware {
     companion object {
         private val logger = PluginLogger.createLogger(DartBridgeLspServer::class.java)
+        private val TEXT_EDIT_LIST_TYPE = object : TypeToken<List<TextEdit>>() {}.type
         private const val LSP_MESSAGE_KEY = "lspMessage"
         private const val LSP_NOTIFICATION_KEY = "lspNotification"
         private const val LSP_NOTIFICATION_EVENT = "lsp.notification"
@@ -530,13 +531,11 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
     }
 
     override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> {
-        val type = object : TypeToken<List<TextEdit>>() {}.type
-        return forwardRequest("textDocument/formatting", params, type)
+        return forwardRequest("textDocument/formatting", params, TEXT_EDIT_LIST_TYPE)
     }
 
     override fun rangeFormatting(params: DocumentRangeFormattingParams): CompletableFuture<List<TextEdit>> {
-        val type = object : TypeToken<List<TextEdit>>() {}.type
-        return forwardRequest("textDocument/rangeFormatting", params, type)
+        return forwardRequest("textDocument/rangeFormatting", params, TEXT_EDIT_LIST_TYPE)
     }
 
     override fun diagnosticServer(): CompletableFuture<DiagnosticServerResult> {

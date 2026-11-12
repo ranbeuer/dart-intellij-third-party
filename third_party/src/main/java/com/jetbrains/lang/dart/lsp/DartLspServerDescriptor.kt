@@ -200,13 +200,7 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             }
         override val formattingCustomizer: LspFormattingCustomizer
             get() = if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) {
-                object : LspFormattingSupport() {
-                    override fun shouldFormatThisFileExclusivelyByServer(
-                        file: VirtualFile,
-                        ideCanFormatThisFileItself: Boolean,
-                        serverExplicitlyWantsToFormatThisFile: Boolean
-                    ): Boolean = file.isInLocalFileSystem && file.extension.equals("dart", ignoreCase = true)
-                }
+                DartLspFormattingSupport
             } else {
                 LspFormattingDisabled
             }
@@ -251,6 +245,14 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         override val codeLensCustomizer = LspCodeLensDisabled
         override val renameCustomizer = LspRenameDisabled
     }
+}
+
+private object DartLspFormattingSupport : LspFormattingSupport() {
+    override fun shouldFormatThisFileExclusivelyByServer(
+        file: VirtualFile,
+        ideCanFormatThisFileItself: Boolean,
+        serverExplicitlyWantsToFormatThisFile: Boolean
+    ): Boolean = file.isInLocalFileSystem && file.extension.equals("dart", ignoreCase = true)
 }
 
 object DartLspCompletionSupport : LspCompletionSupport() {

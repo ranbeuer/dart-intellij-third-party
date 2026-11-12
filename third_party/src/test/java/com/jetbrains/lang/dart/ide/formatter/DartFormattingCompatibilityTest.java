@@ -13,6 +13,7 @@ import com.google.dart.server.internal.remote.RemoteAnalysisServerImpl;
 import com.google.dart.server.internal.remote.RequestSink;
 import com.google.dart.server.internal.remote.ResponseStream;
 import com.intellij.application.options.CodeStyle;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.util.TextRange;
@@ -22,7 +23,6 @@ import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.actions.DartStyleAction;
 import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.jetbrains.lang.dart.sdk.DartSdk;
-import com.jetbrains.lang.dart.util.DartTestUtils;
 import org.dartlang.analysis.server.protocol.DartLspApplyWorkspaceEditParams;
 import org.dartlang.analysis.server.protocol.MessageAction;
 import org.dartlang.analysis.server.protocol.RequestError;
@@ -45,7 +45,6 @@ public class DartFormattingCompatibilityTest extends DartCodeInsightFixtureTestC
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    DartTestUtils.configureDartSdk(getModule(), myFixture.getProjectDisposable(), false);
     DartAnalysisServerService service = DartAnalysisServerService.getInstance(getProject());
     DartSdk sdk = DartSdk.getDartSdk(getProject());
     assertNotNull(sdk);
@@ -82,6 +81,17 @@ public class DartFormattingCompatibilityTest extends DartCodeInsightFixtureTestC
         replaceServiceField(service, "mySdkVersion", previousSdkVersion);
       }
       requests.clear();
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
+    }
+    try {
+      PropertiesComponent.getInstance(getProject()).unsetValue("dart.lsp.experimental.enabled");
+      assertFalse(PropertiesComponent.getInstance(getProject()).isValueSet("dart.lsp.experimental.enabled"));
+      assertTrue(DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()));
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
     }
     finally {
       super.tearDown();

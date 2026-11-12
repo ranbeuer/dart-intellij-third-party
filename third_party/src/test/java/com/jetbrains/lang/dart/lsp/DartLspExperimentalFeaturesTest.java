@@ -50,11 +50,13 @@ public class DartLspExperimentalFeaturesTest extends CodeInsightFixtureTestCase 
 
   public void testFormattingDescriptorFollowsFlagTransitions() {
     final var descriptor = new DartLspServerDescriptor(getProject());
+    final var enabledCustomizer = descriptor.getLspCustomization().getFormattingCustomizer();
     for (boolean enabled : new boolean[]{true, false, true}) {
       PropertiesComponent.getInstance(getProject()).setValue("dart.lsp.experimental.enabled", enabled, true);
       final var customizer = descriptor.getLspCustomization().getFormattingCustomizer();
       if (enabled) {
         assertTrue(customizer instanceof LspFormattingSupport);
+        assertSame(enabledCustomizer, customizer);
       } else {
         assertSame(LspFormattingDisabled.INSTANCE, customizer);
       }
