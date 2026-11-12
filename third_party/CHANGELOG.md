@@ -13,6 +13,7 @@
 - Per-request `dart.legacy_assist` and `dart.legacy_fix` analytics latency events, which fired on every legacy quick assist and quick fix availability check (caret moves, edits, selection changes) rather than when one was applied. Applied assists and fixes are still reported (#793)
 
 ### Fixed
+- Avoid IDE internal errors on startup when opening projects with Dart SDKs older than 3.4 or when the Dart Tooling Daemon fails to start (#30)
 - Avoid `IllegalStateException` in `DartNamedElementImpl.getId()` on `new` constructor declarations (#815)
 - Prevent DartProblemsView from dropping diagnostics when the tool window has not been opened yet, and decouple problem tracking from DartAnalysisServerService (#785)
 - Avoid empty code completion lists when a third-party `DartCompletionExtension` throws an error (#814)
