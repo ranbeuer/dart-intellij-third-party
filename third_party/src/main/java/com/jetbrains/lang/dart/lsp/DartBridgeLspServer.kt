@@ -393,7 +393,18 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
         logger.info("Initialize called")
         initialized = true
+        val reanalyzeRequested =
+            project.getService(DartBridgeLspServerManager::class.java).consumeReanalyzeOnNextClientInitialize()
+        if (reanalyzeRequested) {
+            das.onExperimentalLspSettingChanged()
+        }
         das.updateClientCapabilities(true)
+        if (reanalyzeRequested) {
+            // The bridge was restarted because the experimental LSP setting was toggled. Diagnostics published while it
+            // was down were lost, so ask DAS to re-analyze and re-send them to this newly connected client.
+            logger.info("Re-analyzing after experimental LSP setting change")
+            das.analysis_reanalyze()
+        }
         val legendFuture = das.semanticTokensLegendFuture
         val legendCompletableFuture = when {
             !isLspHighlightingEnabled() -> CompletableFuture.completedFuture(null)

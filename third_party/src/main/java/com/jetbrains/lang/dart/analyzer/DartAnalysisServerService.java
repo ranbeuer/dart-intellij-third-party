@@ -2976,6 +2976,28 @@ public final class DartAnalysisServerService implements Disposable {
     updateClientCapabilities(bridgeManager != null && bridgeManager.isClientConnected());
   }
 
+  /**
+   * Must be called after the experimental LSP setting is toggled.
+   * <p>
+   * Error reporting switches between the legacy DAS path (rendered by {@code DartAnnotator}) and the LSP
+   * {@code publishDiagnostics} path (rendered by the LSP client). The server typically re-sends exactly the same errors after
+   * the switch, which {@link #processComputedErrors} would otherwise drop as duplicates, leaving the editor highlighting (and
+   * therefore the Problems tool window) stale. Forget the per-file error hashes so that the re-sent errors are
+   * processed again.
+   */
+  public void onExperimentalLspSettingChanged() {
+    synchronized (myFilePathToErrorsHash) {
+      myFilePathToErrorsHash.clear();
+    }
+  }
+
+  @VisibleForTesting
+  public boolean hasErrorsHashForFile(@NotNull String filePath) {
+    synchronized (myFilePathToErrorsHash) {
+      return myFilePathToErrorsHash.containsKey(filePath);
+    }
+  }
+
   public void updateClientCapabilities(boolean supportsLspConfiguration) {
     final RemoteAnalysisServerImpl server = myServer;
     if (server != null) {
