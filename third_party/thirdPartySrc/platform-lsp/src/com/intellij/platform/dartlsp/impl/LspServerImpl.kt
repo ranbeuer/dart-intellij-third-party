@@ -383,6 +383,11 @@ class LspServerImpl internal constructor(
 
   internal fun supportsGotoTypeDefinition(): Boolean = serverCapabilities?.typeDefinitionProvider?.let { it.left ?: true } == true
 
+  // Backported from IJPL-255205 (e6203b62); remove after the upstream sync includes it.
+  internal fun supportsGotoImplementation(file: VirtualFile): Boolean =
+    serverCapabilities?.implementationProvider?.let { it.left ?: true }
+    ?: hasDynamicCapabilityToHandleThisFile(file, LspDynamicCapabilities.implementation)
+
   internal fun supportsHover(): Boolean = serverCapabilities?.hoverProvider?.let { it.left ?: true } == true
 
   internal fun supportsFindReferences(file: VirtualFile): Boolean =

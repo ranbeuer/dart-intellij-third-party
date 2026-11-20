@@ -56,6 +56,7 @@ import org.eclipse.lsp4j.FileOperationPattern
 import org.eclipse.lsp4j.FileOperationsServerCapabilities
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.ImplementationParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
@@ -407,6 +408,7 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
                 setHoverProvider(true)
                 setDefinitionProvider(true)
                 setTypeDefinitionProvider(true)
+                setImplementationProvider(true)
                 setDocumentHighlightProvider(true)
                 setInlayHintProvider(true)
                 setTypeHierarchyProvider(true)
@@ -488,6 +490,15 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         val type = object : TypeToken<List<LocationLink>>() {}.type
         return forwardRequest<List<LocationLink>>("textDocument/typeDefinition", params, type).thenApply { links ->
             Either.forRight(links ?: emptyList())
+        }
+    }
+
+    // The shared DAS implementation handler returns Locations (not definition's negotiated LocationLinks).
+    // It is available by Dart 3.4.0; no recent-SDK gate is needed.
+    override fun implementation(params: ImplementationParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        val type = object : TypeToken<List<Location>>() {}.type
+        return forwardRequest<List<Location>>("textDocument/implementation", params, type).thenApply { locations ->
+            Either.forLeft(locations ?: emptyList())
         }
     }
 

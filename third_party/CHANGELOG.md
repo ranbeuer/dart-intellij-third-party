@@ -11,7 +11,8 @@
 - Call Hierarchy navigation via LSP is now enabled for all users (#846)
 - Decoupling Analyzer Diagnostics action from legacy DartAnalysisServerService (#805)
 - Routing `dart/textDocument/publishClosingLabels` notifications through custom `Lsp4jClient` (#748)
-- Go to Super uses JetBrains LSP when experimental LSP features are enabled, navigating to the server's single effective target. Go to Implementation, gutter navigation and Method Hierarchy are unchanged (#821)
+- Go to Super uses JetBrains LSP when experimental LSP features are enabled, navigating to the server's single effective target (#821)
+- Go to Implementation uses JetBrains' upstream LSP navigation when experimental LSP features are enabled; disabling the flag preserves legacy implementation navigation. Gutter navigation and Method Hierarchy are unchanged (#821)
 
 ### Removed
 - Legacy `execution.getSuggestions` runtime completion call in debugger expression fragments, which has returned empty results from the Dart Analysis Server since 2018 (#818)

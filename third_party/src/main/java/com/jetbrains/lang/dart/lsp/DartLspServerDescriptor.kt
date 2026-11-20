@@ -54,6 +54,9 @@ import com.intellij.platform.dartlsp.api.customization.LspFormattingSupport
 import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionCustomizer
 import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionDisabled
 import com.intellij.platform.dartlsp.api.customization.LspGoToDefinitionSupport
+import com.intellij.platform.dartlsp.api.customization.LspGoToImplementationCustomizer
+import com.intellij.platform.dartlsp.api.customization.LspGoToImplementationDisabled
+import com.intellij.platform.dartlsp.api.customization.LspGoToImplementationSupport
 import com.intellij.platform.dartlsp.api.customization.LspGoToTypeDefinitionSupport
 import com.intellij.platform.dartlsp.api.customization.LspHoverSupport
 import com.intellij.platform.dartlsp.api.customization.LspInlayHintCustomizer
@@ -197,6 +200,12 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
                 LspGoToDefinitionDisabled
             }
         override val goToTypeDefinitionCustomizer = LspGoToTypeDefinitionSupport()
+        override val goToImplementationCustomizer: LspGoToImplementationCustomizer
+            get() = if (DartConfigurable.isExperimentalLspFeaturesEnabled(project)) {
+                LspGoToImplementationSupport()
+            } else {
+                LspGoToImplementationDisabled
+            }
         override val completionCustomizer: LspCompletionCustomizer
             get() = if (DartAnalysisServerService.isLspCompletionEnabled(project)) {
                 DartLspCompletionSupport

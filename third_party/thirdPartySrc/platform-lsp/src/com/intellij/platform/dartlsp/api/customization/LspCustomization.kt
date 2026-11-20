@@ -33,6 +33,13 @@ open class LspCustomization {
   open val goToTypeDefinitionCustomizer: LspGoToTypeDefinitionCustomizer = LspGoToTypeDefinitionSupport()
 
   /**
+   * Customizes Go to Implementation (`textDocument/implementation`).
+   * Return [LspGoToImplementationDisabled] to disable this feature.
+   * Backported from IJPL-255205 (e6203b62); remove after the upstream sync includes it.
+   */
+  open val goToImplementationCustomizer: LspGoToImplementationCustomizer = LspGoToImplementationSupport()
+
+  /**
    * Customizes the LSP hover feature behavior. By default, uses standard [LspHoverSupport] implementation.
    * Implementations may override this property to:
    * - return their specific subclass of [LspHoverSupport] that fine-tunes the behavior

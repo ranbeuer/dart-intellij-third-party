@@ -15,6 +15,14 @@ package com.jetbrains.dart.analysisServer;
 
 import com.intellij.codeInsight.navigation.GotoTargetHandler;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.util.Ref;
+import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 import com.intellij.testFramework.fixtures.CodeInsightTestUtil;
@@ -40,15 +48,62 @@ public class DartGotoImplementationTest extends CodeInsightFixtureTestCase {
     }
 
     protected void doTest(int expectedLength) {
-        myFixture.configureByFile(getTestName(false) + ".dart");
+        final boolean previous = DartConfigurable.isExperimentalLspFeaturesEnabled(getProject());
+        try {
+            for (boolean enabled : new boolean[]{false, true}) {
+                DartConfigurable.setExperimentalLspFeaturesEnabled(getProject(), enabled);
+                myFixture.configureByFile(getTestName(false) + ".dart");
+                myFixture.doHighlighting();
+                if (enabled) {
+                    startBridge();
+                }
+                doTestInner(expectedLength);
+            }
+        } finally {
+            DartConfigurable.setExperimentalLspFeaturesEnabled(getProject(), previous);
+        }
+    }
+
+    private void startBridge() {
+        // Production startup deliberately skips the bridge in unit-test mode.
+        final var opened = new java.util.concurrent.atomic.AtomicBoolean();
+        com.intellij.platform.dartlsp.api.LspServerManager.getInstance(getProject()).addLspServerManagerListener(
+            new com.intellij.platform.dartlsp.api.LspServerManagerListener() {
+                @Override
+                public void fileOpened(com.intellij.platform.dartlsp.api.LspServer server,
+                                       com.intellij.openapi.vfs.VirtualFile file) {
+                    if (file.equals(myFixture.getFile().getVirtualFile())) opened.set(true);
+                }
+            }, myFixture.getTestRootDisposable(), true);
+        getProject().getService(com.jetbrains.lang.dart.lsp.DartBridgeLspServerManager.class).startBridgeServer();
+        com.intellij.testFramework.PlatformTestUtil.waitWithEventsDispatching("Bridge opened source", opened::get, 10);
+    }
+
+    public void testResolvedReferenceUsesPlatformImplementation() {
+        DartConfigurable.setExperimentalLspFeaturesEnabled(getProject(), true);
+        myFixture.configureByText("reference.dart",
+            "abstract class Base {}\nclass Concrete implements Base {}\nvoid main(Ba<caret>se value) {}\n");
         myFixture.doHighlighting();
-        doTestInner(expectedLength);
+        final var reference = myFixture.getFile().findReferenceAt(myFixture.getCaretOffset());
+        assertNotNull(reference);
+        assertNotNull("The real Dart reference must resolve before the action", reference.resolve());
+        startBridge();
+        doTestInner(1);
     }
 
     private void doTestInner(int expectedLength) {
-        final GotoTargetHandler.GotoData data = CodeInsightTestUtil.gotoImplementation(myFixture.getEditor(), myFixture.getFile());
-        assertNotNull(myFixture.getFile().toString(), data);
-        assertEquals(expectedLength, data.targets.length);
+        final var action = ActionManager.getInstance().getAction(IdeActions.ACTION_GOTO_IMPLEMENTATION);
+        final var context = SimpleDataContext.builder()
+            .add(CommonDataKeys.PROJECT, getProject())
+            .add(CommonDataKeys.EDITOR, myFixture.getEditor())
+            .add(CommonDataKeys.PSI_FILE, myFixture.getFile()).build();
+        final var event = AnActionEvent.createFromAnAction(action, null, "test", context);
+        final Ref<GotoTargetHandler.GotoData> result = Ref.create();
+        ActionUtil.performDumbAwareWithCallbacks(action, event, () ->
+            result.set(CodeInsightTestUtil.gotoImplementation(myFixture.getEditor(), myFixture.getFile())));
+        final GotoTargetHandler.GotoData data = result.get();
+        assertNotNull("LSP enabled=" + DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()) + ": " + myFixture.getFile(), data);
+        assertEquals("LSP enabled=" + DartConfigurable.isExperimentalLspFeaturesEnabled(getProject()), expectedLength, data.targets.length);
     }
 
     public void testGti1() {
