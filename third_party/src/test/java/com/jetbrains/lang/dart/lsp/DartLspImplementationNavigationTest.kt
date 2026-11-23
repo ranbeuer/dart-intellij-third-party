@@ -20,6 +20,11 @@ import com.intellij.platform.dartlsp.api.LspCommunicationChannel
 import com.intellij.platform.dartlsp.api.LspServerDescriptor
 import com.intellij.platform.dartlsp.api.LspServerManager
 import com.intellij.platform.dartlsp.api.LspServerState
+import com.intellij.pom.PomTargetPsiElement
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.LocalSearchScope
+import com.intellij.psi.search.SearchScope
+import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import com.intellij.testFramework.PlatformTestUtil
 import com.jetbrains.lang.dart.DartCodeInsightFixtureTestCase
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService
@@ -40,6 +45,16 @@ import java.util.concurrent.Executors
 
 /** Exercises the real action and rich Dart PSI, not a manually constructed POM target. */
 class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
+    fun testDartEvaluatorDoesNotReferenceInternalActionContextApi() {
+        val evaluator = com.jetbrains.lang.dart.ide.findUsages.DartTargetElementEvaluator::class.java
+        val bytecode = requireNotNull(evaluator.getResourceAsStream("DartTargetElementEvaluator.class")).use {
+            it.readBytes().toString(Charsets.ISO_8859_1)
+        }
+        for (symbol in listOf("com/intellij/openapi/actionSystem/ex/ActionUtil", "ActionContextElement")) {
+            assertFalse("Dart evaluator must not reference internal action API: $symbol", bytecode.contains(symbol))
+        }
+    }
+
     fun testDeclarationActionUsesImplementationAtExactCrossFileOffset() = withSession { session ->
         session.navigate("abstract class So<caret>urce {}")
     }
@@ -70,6 +85,18 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
 
     fun testLocationAndLocationLinkResponsesNormalizeAndDeduplicate() = withSession { session ->
         session.checkNormalizedTargets()
+    }
+
+    fun testRestrictedDefinitionsScopeExcludesOutsideImplementation() = withSession { session ->
+        session.checkScopedTargets(restricted = true)
+    }
+
+    fun testAllDefinitionsScopeRetainsBothImplementations() = withSession { session ->
+        session.checkScopedTargets(restricted = false)
+    }
+
+    fun testLocalDefinitionsScopeRetainsOnlyImplementationInsideDeclaration() = withSession { session ->
+        session.checkLocalScopedTargets()
     }
 
     fun testDynamicImplementationCapabilityIsRespected() = withSession(capability = null) { session ->
@@ -110,6 +137,7 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
         private val requests = CopyOnWriteArrayList<ImplementationParams>()
         private val hierarchy = CopyOnWriteArrayList<Triple<String, Int, Boolean>>()
         private var source: VirtualFile? = null
+        private var outsideTarget: VirtualFile? = null
         var result: Either<List<Location>, List<LocationLink>>? = Either.forLeft(
             listOf(Location(target.url, Range(Position(1, 6), Position(1, 14)))))
         var error: Throwable? = null
@@ -150,6 +178,7 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
                 override fun getFileUri(file: VirtualFile) = file.url
                 override fun findFileByUri(fileUri: String) = when (fileUri) {
                     target.url -> target
+                    outsideTarget?.url -> outsideTarget
                     source?.url -> source
                     else -> null
                 }
@@ -190,7 +219,11 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
             registered.get()
         }
 
-        private fun invoke(text: String = "abstract class So<caret>urce {}", collectTargets: Boolean = false): Array<com.intellij.psi.PsiElement>? {
+        private fun invoke(
+            text: String = "abstract class So<caret>urce {}",
+            collectTargets: Boolean = false,
+            searchScope: SearchScope? = null
+        ): Array<com.intellij.psi.PsiElement>? {
             source = myFixture.configureByText("source.dart", text).virtualFile
             manager.getServersForProvider(DartLspServerSupportProvider::class.java).forEach {
                 (it as com.intellij.platform.dartlsp.impl.LspServerImpl).documentSyncManager.openForOpenedOrUnsavedFiles()
@@ -201,7 +234,7 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
                 com.intellij.platform.dartlsp.impl.LspServerManagerImpl.getInstanceImpl(project)
                     .getServersWithThisFileOpen(requireNotNull(source)).isNotEmpty()
             }
-            if (!collectTargets) {
+            if (!collectTargets && searchScope == null) {
                 myFixture.performEditorAction(IdeActions.ACTION_GOTO_IMPLEMENTATION)
                 return null
             }
@@ -213,7 +246,14 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
             val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromAnAction(action, null, "test", context)
             var targets: Array<com.intellij.psi.PsiElement>? = null
             com.intellij.openapi.actionSystem.ex.ActionUtil.performDumbAwareWithCallbacks(action, event) {
-                targets = com.intellij.testFramework.fixtures.CodeInsightTestUtil.gotoImplementation(myFixture.editor, myFixture.file)?.targets
+                if (searchScope == null) {
+                    targets = com.intellij.testFramework.fixtures.CodeInsightTestUtil.gotoImplementation(myFixture.editor, myFixture.file)?.targets
+                } else {
+                    val element = requireNotNull(com.intellij.codeInsight.TargetElementUtil.findTargetElement(
+                        myFixture.editor, com.intellij.codeInsight.TargetElementUtil.getInstance().allAccepted))
+                    assertTrue("Implementation action must create an LSP POM target", element is PomTargetPsiElement)
+                    targets = DefinitionsScopedSearch.search(element, searchScope).findAll().toTypedArray()
+                }
             }
             return targets
         }
@@ -253,6 +293,59 @@ class DartLspImplementationNavigationTest : DartCodeInsightFixtureTestCase() {
                 assertFalse(FileEditorManager.getInstance(project).isFileOpen(target))
                 assertEmpty(hierarchy)
             }
+        }
+
+        fun checkScopedTargets(restricted: Boolean) {
+            val outside = myFixture.addFileToProject("outside.dart", "// outside\nclass Outside {}\n").virtualFile
+            outsideTarget = outside
+            result = Either.forLeft(listOf(
+                Location(target.url, Range(Position(1, 6), Position(1, 14))),
+                Location(outside.url, Range(Position(1, 6), Position(1, 13)))
+            ))
+            val fileScope = GlobalSearchScope.fileScope(project, target)
+            assertTrue("Restricted scope must contain the allowed target", fileScope.contains(target))
+            assertFalse("Restricted scope must exclude the outside target", fileScope.contains(outside))
+            val scope = if (restricted) fileScope else GlobalSearchScope.allScope(project)
+            if (!restricted) {
+                assertTrue(scope.contains(target))
+                assertTrue(scope.contains(outside))
+            }
+            assertEmpty(requests)
+            val targets = requireNotNull(invoke(searchScope = scope))
+            // A result mismatch is meaningful only after the real endpoint received the source/caret query.
+            assertEquals(1, requests.size)
+            assertEquals(requireNotNull(source).url, requests.single().textDocument.uri)
+            assertEquals(Position(0, "abstract class So".length), requests.single().position)
+            assertEmpty("Public LSP search must not fall back to legacy hierarchy", hierarchy)
+            assertFalse(FileEditorManager.getInstance(project).isFileOpen(target))
+            assertFalse(FileEditorManager.getInstance(project).isFileOpen(outside))
+            val expected = listOf(target to "// target\nclass ".length) +
+                if (restricted) emptyList() else listOf(outside to "// outside\nclass ".length)
+            val targetOrder = compareBy<Pair<VirtualFile, Int>>({ it.first.url }, { it.second })
+            assertEquals("Public DefinitionsScopedSearch must respect its explicit scope",
+                         expected.sortedWith(targetOrder),
+                         targets.map { it.containingFile.virtualFile to it.textOffset }.sortedWith(targetOrder))
+        }
+
+        fun checkLocalScopedTargets() {
+            val targetPsi = requireNotNull(com.intellij.psi.PsiManager.getInstance(project).findFile(target))
+            val declaration = requireNotNull(com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                targetPsi.findElementAt(16), com.jetbrains.lang.dart.psi.DartClass::class.java))
+            val scope = LocalSearchScope(declaration)
+            assertTrue(scope.containsRange(targetPsi, com.intellij.openapi.util.TextRange.from(16, 0)))
+            assertFalse(scope.containsRange(targetPsi, com.intellij.openapi.util.TextRange.from(34, 0)))
+            result = Either.forLeft(listOf(
+                Location(target.url, Range(Position(1, 6), Position(1, 14))),
+                Location(target.url, Range(Position(2, 6), Position(2, 11)))
+            ))
+            assertEmpty(requests)
+            val targets = requireNotNull(invoke(searchScope = scope))
+            assertEquals(1, requests.size)
+            assertEquals(requireNotNull(source).url, requests.single().textDocument.uri)
+            assertEquals(Position(0, "abstract class So".length), requests.single().position)
+            assertEmpty("Public LSP search must not fall back to legacy hierarchy", hierarchy)
+            assertFalse(FileEditorManager.getInstance(project).isFileOpen(target))
+            assertEquals(listOf(target to 16), targets.map { it.containingFile.virtualFile to it.textOffset })
         }
 
         fun navigate(text: String) {

@@ -20,6 +20,8 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.impl.FakePsiElement
+import com.intellij.psi.search.LocalSearchScope
+import com.intellij.psi.search.PsiSearchScopeUtil
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import com.intellij.util.Consumer
 import com.intellij.util.IconUtil
@@ -45,7 +47,7 @@ internal class LspImplementationDeclarationSearcher : PomDeclarationSearcher() {
   override fun findDeclarationsAt(element: PsiElement, offsetInElement: Int, consumer: Consumer<in PomTarget>) {
     // This function is called for many features that need a named element at the offset.
     // We care only about the "Go To Implementation" action, which the thread context names.
-    if (ActionUtil.getActionThreadContext()?.actionId != IdeActions.ACTION_GOTO_IMPLEMENTATION) return
+    if (!LspGotoImplementationTarget.isImplementationAction()) return
 
     val psiFile = element.containingFile ?: return
     val project = psiFile.project
@@ -73,6 +75,14 @@ internal class LspImplementationDeclarationSearcher : PomDeclarationSearcher() {
  * That self result would win over the LSP results.
  */
 internal class LspGotoImplementationTarget(val psiFile: PsiFile, val offsetInFile: Int) : PomNamedTarget {
+  companion object {
+    // Dart adapter for IJPL-255205 (e6203b62): keep upstream action-context access in the copied feature.
+    // Remove with the rich-PSI adapter when platform lookup handles resolved references itself.
+    @JvmStatic
+    fun isImplementationAction(): Boolean =
+      ActionUtil.getActionThreadContext()?.actionId == IdeActions.ACTION_GOTO_IMPLEMENTATION
+  }
+
   /**
    * The word at the caret. The "Implementations of ..." popup title shows it.
    */
@@ -158,6 +168,7 @@ internal class LspDefinitionsScopedSearcher : QueryExecutorBase<PsiElement, Defi
     val target = sourceElement.target as? LspGotoImplementationTarget ?: return
     val file = target.psiFile.virtualFile ?: return
     val project = queryParameters.project
+    val scope = queryParameters.scope
     val psiManager = PsiManager.getInstance(project)
 
     for (lspServer in LspServerManagerImpl.getInstanceImpl(project).getServersWithThisFileOpen(file)) {
@@ -174,7 +185,11 @@ internal class LspDefinitionsScopedSearcher : QueryExecutorBase<PsiElement, Defi
                               ?.let { getOffsetInDocument(it, range.start) }
                               ?.let { LspImplementationTargetElement(targetPsiFile, it) }
                             ?: targetPsiFile
-        if (!consumer.process(targetElement)) return
+        // Local scope needs the exact range: this synthetic element is parented to the file, not the declaration.
+        // Remove this local correction when the upstream implementation searcher enforces the requested scope.
+        val inScope = if (scope is LocalSearchScope) scope.containsRange(targetPsiFile, targetElement.textRange)
+                      else PsiSearchScopeUtil.isInScope(scope, targetElement)
+        if (inScope && !consumer.process(targetElement)) return
       }
     }
   }

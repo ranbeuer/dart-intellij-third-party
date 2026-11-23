@@ -7,8 +7,6 @@ package com.jetbrains.lang.dart.ide.findUsages;
 
 import com.intellij.codeInsight.TargetElementEvaluatorEx2;
 import com.intellij.codeInsight.TargetElementUtil;
-import com.intellij.openapi.actionSystem.IdeActions;
-import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.platform.dartlsp.impl.features.navigation.LspGotoImplementationTarget;
 import com.intellij.pom.PomTargetPsiElement;
@@ -46,8 +44,7 @@ public class DartTargetElementEvaluator extends TargetElementEvaluatorEx2 {
                                                                  int offset,
                                                                  int flags,
                                                                  @Nullable PsiElement referencedElement) {
-    final var context = ActionUtil.getActionThreadContext();
-    if (context != null && IdeActions.ACTION_GOTO_IMPLEMENTATION.equals(context.getActionId()) &&
+    if (LspGotoImplementationTarget.isImplementationAction() &&
         DartConfigurable.isExperimentalLspFeaturesEnabled(file.getProject())) {
       // Rich Dart references resolve before the platform's POM lookup (IJPL-255205).
       // Reuse that lookup, including its capability/customizer checks; do not manufacture a Dart target.
