@@ -48,6 +48,7 @@ import com.jetbrains.lang.dart.analytics.AnalyticsData;
 import com.jetbrains.lang.dart.analytics.SettingsChangeData;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.flutter.FlutterUtil;
+import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
 import com.jetbrains.lang.dart.lsp.DartBridgeLspServerManager;
 import com.jetbrains.lang.dart.lsp.LspMethod;
 import com.jetbrains.lang.dart.ui.BasicComboBoxWithBrowseButton;
@@ -397,22 +398,33 @@ public final class DartConfigurable implements SearchableConfigurable, NoScroll,
       }
     };
 
+    final boolean dartSupportSelected = myEnableDartSupportCheckBox.isSelected();
+    final boolean experimentalChanged = dartSupportSelected && initialExperimentalEnabled != currentExperimentalEnabled;
+    final DartBridgeLspServerManager bridgeManager = experimentalChanged ? myProject.getService(DartBridgeLspServerManager.class) : null;
+    if (bridgeManager != null) {
+      // Stop the bridge BEFORE flipping the persisted setting in runWriteAction so DartBridgeLspServer.stop()
+      // does not read the already-flipped setting when sending teardown capabilities.
+      bridgeManager.stopBridgeServer();
+    }
+
     ApplicationManager.getApplication().runWriteAction(runnable);
 
-    reportExperimentalLspFeaturesChange(myProject, myEnableDartSupportCheckBox.isSelected(),
+    reportExperimentalLspFeaturesChange(myProject, dartSupportSelected,
                                         initialExperimentalEnabled, currentExperimentalEnabled);
 
-    if (myEnableDartSupportCheckBox.isSelected() && initialExperimentalEnabled != currentExperimentalEnabled) {
-      DartBridgeLspServerManager bridgeManager = myProject.getService(DartBridgeLspServerManager.class);
-      if (currentExperimentalEnabled) {
+    if (experimentalChanged) {
+      DartAnalysisServerService dasService = DartAnalysisServerService.getInstance(myProject);
+      // Clear stale error state synchronously on the EDT before triggering reanalysis (avoids deferred ModalityState.nonModal() race).
+      dasService.onExperimentalLspSettingChanged();
+      DartProblemsView.getInstance(myProject).clearAll();
+      if (DartAnalysisServerService.isLspPublishDiagnosticsEnabled(myProject)) {
         // Diagnostics published while the bridge is down are lost; have DAS re-send them once the LSP client reconnects.
         bridgeManager.requestReanalyzeOnNextClientInitialize();
       }
-      bridgeManager.stopBridgeServer();
-      DartAnalysisServerService dasService = DartAnalysisServerService.getInstance(myProject);
-      dasService.onExperimentalLspSettingChanged();
-      if (!currentExperimentalEnabled) {
-        dasService.updateClientCapabilities();
+      else {
+        dasService.updateClientCapabilities(false);
+        // DAS does not re-send legacy analysis.errors on server.setClientCapabilities alone; trigger reanalysis to repopulate DartServerData.
+        dasService.requestReanalysisWithoutDeferredClear();
       }
       dasService.updateSubscriptions();
       DaemonCodeAnalyzer.getInstance(myProject).restart("Dart settings changed");

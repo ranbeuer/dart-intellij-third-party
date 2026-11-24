@@ -454,6 +454,10 @@ public final class DartServerData {
     }
   }
 
+  void clearErrors() {
+    myErrorData.clear();
+  }
+
   void clearData() {
     myErrorData.clear();
     myHighlightData.clear();

@@ -12,12 +12,15 @@ import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView;
 import com.jetbrains.lang.dart.lsp.DartBridgeLspServerManager;
 import com.jetbrains.lang.dart.sdk.DartConfigurable;
+import com.jetbrains.lang.dart.sdk.DartSdk;
+import com.jetbrains.lang.dart.util.DartTestUtils;
 import org.dartlang.analysis.server.protocol.AnalysisError;
 import org.dartlang.analysis.server.protocol.AnalysisErrorSeverity;
 import org.dartlang.analysis.server.protocol.AnalysisErrorType;
 import org.dartlang.analysis.server.protocol.Location;
 import org.jetbrains.annotations.NotNull;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 
@@ -28,6 +31,14 @@ import java.util.List;
 public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
 
   private static final String LSP_EXPERIMENTAL_KEY = "dart.lsp.experimental.enabled";
+  private static final String SUPPORTED_LSP_DIAGNOSTICS_SDK_VERSION = "3.15.0";
+
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    DartTestUtils.configureDartSdk(myModule, myFixture.getTestRootDisposable(), false);
+    setSdkVersion(SUPPORTED_LSP_DIAGNOSTICS_SDK_VERSION);
+  }
 
   @Override
   public void tearDown() throws Exception {
@@ -36,6 +47,7 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
       DartProblemsView problemsView = DartProblemsView.getInstance(getProject());
       problemsView.clearAll();
       problemsView.clearNotifications();
+      DartTestUtils.resetModuleRoots(myModule);
     }
     catch (Throwable e) {
       addSuppressedException(e);
@@ -43,6 +55,14 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
     finally {
       super.tearDown();
     }
+  }
+
+  private void setSdkVersion(@NotNull String version) throws Exception {
+    DartSdk sdk = DartSdk.getDartSdk(getProject());
+    assertNotNull(sdk);
+    Field versionField = DartSdk.class.getDeclaredField("myVersion");
+    versionField.setAccessible(true);
+    versionField.set(sdk, version);
   }
 
   private void setLspEnabled(boolean enabled) {
@@ -144,6 +164,18 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
     assertOpenProblemsNotification();
   }
 
+  public void testDisplayIssuesLspEnabledWithOlderSdkShowsOpenDartAnalysisNotification() throws Exception {
+    VirtualFile file = addMainFile();
+    reportError(file);
+    setLspEnabled(true);
+    setSdkVersion("3.13.0");
+    assertFalse(DartAnalysisServerService.isLspPublishDiagnosticsEnabled(getProject()));
+
+    DartExecutionHelper.displayIssues(getProject(), file, "Execution Message", null);
+
+    assertOpenDartAnalysisNotification();
+  }
+
   public void testDisplayIssuesLspDisabledShowsOpenDartAnalysisNotification() {
     VirtualFile file = addMainFile();
     reportError(file);
@@ -216,12 +248,16 @@ public class DartExecutionHelperTest extends CodeInsightFixtureTestCase {
   }
 
   public void testDisplayIssuesFlutterHtmlLinkSupport() {
-    String htmlContent = "Some errors exist: <a href='open.dart.analysis'>Open Problems</a>";
-    DartProblemsView.getInstance(getProject()).showErrorNotification("Error Title", htmlContent, null, false);
+    setLspEnabled(true);
+    VirtualFile file = addMainFile();
+    reportError(file);
+    String htmlContent = "<a href='open.dart.analysis'>Analysis issues</a> may affect the execution of 'main.dart'.";
+    DartExecutionHelper.displayIssues(getProject(), file, htmlContent, null);
 
     Notification notification = DartProblemsView.getInstance(getProject()).getNotification();
     assertNotNull(notification);
-    // Notification listener is attached to handle open.dart.analysis hyperlink
-    assertNotNull(notification.getListener());
+    assertEquals("Analysis issues may affect the execution of 'main.dart'.", notification.getContent());
+    assertNull("Deprecated Notification.setListener must not be used", notification.getListener());
+    assertOpenProblemsNotification();
   }
 }

@@ -395,15 +395,13 @@ class DartBridgeLspServer(private val project: Project) : DartLanguageServer, Te
         initialized = true
         val reanalyzeRequested =
             project.getService(DartBridgeLspServerManager::class.java).consumeReanalyzeOnNextClientInitialize()
-        if (reanalyzeRequested) {
-            das.onExperimentalLspSettingChanged()
-        }
         das.updateClientCapabilities(true)
         if (reanalyzeRequested) {
             // The bridge was restarted because the experimental LSP setting was toggled. Diagnostics published while it
-            // was down were lost, so ask DAS to re-analyze and re-send them to this newly connected client.
+            // was down were lost, so ask DAS to re-analyze and re-send them to this newly connected client without
+            // scheduling a deferred nonModal clearAllErrors() that would wipe freshly published diagnostics.
             logger.info("Re-analyzing after experimental LSP setting change")
-            das.analysis_reanalyze()
+            das.requestReanalysisWithoutDeferredClear()
         }
         val legendFuture = das.semanticTokensLegendFuture
         val legendCompletableFuture = when {

@@ -3050,6 +3050,56 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         )
     }
 
+    fun testInitializeReanalysisDoesNotWipeFreshDiagnosticsViaDeferredClear() {
+        val file = myFixture.addFileToProject("reanalyze.dart", "void main() { broken }").virtualFile
+        val problemsView = com.jetbrains.lang.dart.ide.errorTreeView.DartProblemsView.getInstance(project)
+        val das = DartAnalysisServerService.getInstance(project)
+        val serviceClass = DartAnalysisServerService::class.java
+        val initDoneField = serviceClass.getDeclaredField("myInitializationOnServerStartupDone").apply { isAccessible = true }
+        val originalInitDone = initDoneField.getBoolean(das)
+
+        try {
+            initDoneField.setBoolean(das, true)
+            bridgeServer.isLspHighlightingEnabled = { false }
+            project.getService(DartBridgeLspServerManager::class.java).requestReanalyzeOnNextClientInitialize()
+
+            requestObserver = { req ->
+                if (req.get("method")?.asString == "analysis.reanalyze") {
+                    // Simulate DAS publishing fresh diagnostics immediately upon receiving analysis.reanalyze,
+                    // before any deferred invokeLater(ModalityState.nonModal()) tasks run on the EDT.
+                    val error = org.dartlang.analysis.server.protocol.AnalysisError(
+                        org.dartlang.analysis.server.protocol.AnalysisErrorSeverity.ERROR,
+                        org.dartlang.analysis.server.protocol.AnalysisErrorType.SYNTACTIC_ERROR,
+                        org.dartlang.analysis.server.protocol.Location(file.path, 14, 6, 1, 15, 1, 21),
+                        "Undefined name 'broken'",
+                        null,
+                        "undefined_identifier",
+                        null,
+                        null,
+                        false
+                    )
+                    problemsView.updateErrorsForFile(file.path, listOf(error))
+                }
+            }
+
+            bridgeServer.initialize(InitializeParams()).get(5, TimeUnit.SECONDS)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+
+            assertEquals(
+                listOf("server.setClientCapabilities", "analysis.reanalyze"),
+                capturedRequests.map { it.get("method")?.asString }
+            )
+            assertTrue(
+                "Freshly published diagnostics must not be wiped by a deferred nonModal clearAllErrors()",
+                problemsView.hasErrorsInScope(com.intellij.psi.search.GlobalSearchScope.fileScope(project, file))
+            )
+        } finally {
+            requestObserver = null
+            initDoneField.setBoolean(das, originalInitDone)
+            problemsView.clearAll()
+        }
+    }
+
     private class MockLanguageClient : DartLanguageClient {
         var publishedDiagnostics: PublishDiagnosticsParams? = null
         var publishedClosingLabels: DartPublishClosingLabelsParams? = null

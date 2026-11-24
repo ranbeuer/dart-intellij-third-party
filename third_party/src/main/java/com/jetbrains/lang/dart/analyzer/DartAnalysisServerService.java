@@ -2209,6 +2209,18 @@ public final class DartAnalysisServerService implements Disposable {
     ApplicationManager.getApplication().invokeLater(this::clearAllErrors, ModalityState.nonModal(), myDisposedCondition);
   }
 
+  /**
+   * Sends {@code analysis.reanalyze} to DAS without scheduling a deferred {@code ModalityState.nonModal()} {@link #clearAllErrors()}
+   * callback. Callers that run while a modal dialog (such as Settings) is open must clear stale error state synchronously beforehand;
+   * otherwise the deferred {@code clearAllErrors()} runs after the dialog closes and wipes diagnostics freshly published by the reanalysis.
+   */
+  public void requestReanalysisWithoutDeferredClear() {
+    final AnalysisServer server = myServer;
+    if (server != null) {
+      server.analysis_reanalyze();
+    }
+  }
+
   private void analysis_setPriorityFiles() {
     synchronized (myLock) {
       if (myServer == null) return;
@@ -2896,6 +2908,7 @@ public final class DartAnalysisServerService implements Disposable {
     synchronized (myFilePathToErrorsHash) {
       myFilePathToErrorsHash.clear();
     }
+    myServerData.clearErrors();
   }
 
   @VisibleForTesting
