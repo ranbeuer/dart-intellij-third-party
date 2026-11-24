@@ -6,8 +6,14 @@
 package com.jetbrains.lang.dart.ide.findUsages;
 
 import com.intellij.codeInsight.TargetElementEvaluatorEx2;
+import com.intellij.codeInsight.TargetElementUtil;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.platform.dartlsp.impl.features.navigation.LspGotoImplementationTarget;
+import com.intellij.pom.PomTargetPsiElement;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.intellij.psi.PsiReference;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import org.jetbrains.annotations.NotNull;
@@ -32,6 +38,27 @@ import java.util.Collections;
  * deprecated, or if the platform avoids the TargetElementUtil fallback when LSP targets exist.
  */
 public class DartTargetElementEvaluator extends TargetElementEvaluatorEx2 {
+  @Override
+  public @Nullable PsiElement adjustReferenceOrReferencedElement(@NotNull PsiFile file,
+                                                                 @NotNull Editor editor,
+                                                                 int offset,
+                                                                 int flags,
+                                                                 @Nullable PsiElement referencedElement) {
+    if (LspGotoImplementationTarget.isImplementationAction() &&
+        DartConfigurable.isExperimentalLspFeaturesEnabled(file.getProject())) {
+      // Rich Dart references resolve before the platform's POM lookup (IJPL-255205).
+      // Reuse that lookup, including its capability/customizer checks; do not manufacture a Dart target.
+      final PsiElement leaf = file.findElementAt(TargetElementUtil.adjustOffset(file, editor.getDocument(), offset));
+      if (leaf != null) {
+        final PsiElement target = TargetElementUtil.getInstance().getNamedElement(leaf, offset - leaf.getTextRange().getStartOffset());
+        if (target instanceof PomTargetPsiElement pom && pom.getTarget() instanceof LspGotoImplementationTarget) {
+          return target;
+        }
+      }
+    }
+    return referencedElement;
+  }
+
   @Override
   public @Nullable Collection<PsiElement> getTargetCandidates(@NotNull PsiReference reference) {
     final PsiElement element = reference.getElement();

@@ -51,6 +51,9 @@
     <psi.implicitReferenceProvider
                                    implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspDocumentLinkReferenceProvider"/>
     <lang.symbolTypeProvider implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspSymbolTypeProvider"/>
+    <!-- IJPL-255205 (e6203b62): remove this backport after the upstream sync includes it. -->
+    <pom.declarationSearcher implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspImplementationDeclarationSearcher"/>
+    <definitionsScopedSearch implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspDefinitionsScopedSearcher"/>
     <uiDataRule implementation="com.intellij.platform.dartlsp.impl.features.usages.LspSearchTargetsRule"/>
     <searcher forClass="com.intellij.find.usages.api.UsageSearchParameters"
               implementationClass="com.intellij.platform.dartlsp.impl.features.usages.LspUsageSearcher"/>

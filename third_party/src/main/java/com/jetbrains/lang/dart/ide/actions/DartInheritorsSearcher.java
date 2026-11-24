@@ -17,6 +17,7 @@ import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.hierarchy.DartHierarchyUtil;
 import com.jetbrains.lang.dart.psi.DartComponent;
 import com.jetbrains.lang.dart.psi.DartComponentName;
+import com.jetbrains.lang.dart.sdk.DartConfigurable;
 import com.jetbrains.lang.dart.util.DartResolveUtil;
 import org.dartlang.analysis.server.protocol.Element;
 import org.dartlang.analysis.server.protocol.Location;
@@ -96,6 +97,7 @@ public final class DartInheritorsSearcher extends QueryExecutorBase<PsiElement, 
     ApplicationManager.getApplication().runReadAction(() -> {
       final PsiElement element = parameters.getElement();
       if (element.getLanguage() != DartLanguage.INSTANCE) return;
+      if (DartConfigurable.isExperimentalLspFeaturesEnabled(element.getProject())) return;
 
       final DartComponentType componentType = DartComponentType.typeOf(element);
       if (componentType != DartComponentType.CLASS &&

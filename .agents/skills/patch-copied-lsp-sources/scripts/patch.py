@@ -861,7 +861,306 @@ fun getDocumentFilterPattern(filter: DocumentFilter): Either<String, Any>? {
             with open(intention_action_path, "w", encoding="utf-8") as f:
                 f.write(intention_content)
 
+    # 17. Bounded Go to Implementation backport: IJPL-255205, e6203b62fd594bbd976fc6fa990b6e634584e1b5.
+    # Remove once the copied snapshot includes this feature. No downloads or snapshot refresh are needed.
+    apply_implementation_navigation_backport(base_dir)
+
     print("Patch applied successfully!")
+
+def apply_implementation_navigation_backport(base_dir):
+    platform = os.path.join(base_dir, "third_party/thirdPartySrc/platform-lsp")
+    source = "src/com/intellij/platform/dartlsp/"
+
+    def write_if_changed(relative, content):
+        path = os.path.join(platform, relative)
+        previous = None
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                previous = f.read()
+        if previous != content:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+    def insert_once(relative, marker, anchor, replacement):
+        path = os.path.join(platform, relative)
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        if marker in content:
+            return
+        if content.count(anchor) != 1:
+            raise RuntimeError(f"IJPL-255205: expected exactly one anchor in {relative}")
+        write_if_changed(relative, content.replace(anchor, replacement))
+
+    write_if_changed(source + "api/customization/LspGoToImplementationCustomizer.kt", IMPLEMENTATION_CUSTOMIZER)
+    write_if_changed(source + "impl/features/navigation/LspGotoImplementation.kt", GOTO_IMPLEMENTATION)
+    insert_once(source + "api/customization/LspCustomization.kt", "open val goToImplementationCustomizer:",
+                "  open val goToTypeDefinitionCustomizer: LspGoToTypeDefinitionCustomizer = LspGoToTypeDefinitionSupport()\n",
+                "  open val goToTypeDefinitionCustomizer: LspGoToTypeDefinitionCustomizer = LspGoToTypeDefinitionSupport()\n" + IMPLEMENTATION_CUSTOMIZATION)
+    insert_once(source + "impl/LspRequestExecutor.kt", "import org.eclipse.lsp4j.ImplementationParams\n",
+                "import org.eclipse.lsp4j.LocationLink\n",
+                "import org.eclipse.lsp4j.LocationLink\nimport org.eclipse.lsp4j.ImplementationParams\n")
+    insert_once(source + "impl/LspRequestExecutor.kt", "fun getImplementations(",
+                "  @RequiresBackgroundThread\n  internal fun getWorkspaceSymbolsCaching",
+                IMPLEMENTATION_REQUEST + "  @RequiresBackgroundThread\n  internal fun getWorkspaceSymbolsCaching")
+    insert_once(source + "impl/LspServerImpl.kt", "fun supportsGotoImplementation(",
+                "  internal fun supportsGotoTypeDefinition(): Boolean = serverCapabilities?.typeDefinitionProvider?.let { it.left ?: true } == true\n",
+                "  internal fun supportsGotoTypeDefinition(): Boolean = serverCapabilities?.typeDefinitionProvider?.let { it.left ?: true } == true\n" + IMPLEMENTATION_CAPABILITY)
+    insert_once("resources/dart-lsp-impl.xml", 'implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspDefinitionsScopedSearcher"',
+                '    <uiDataRule implementation="com.intellij.platform.dartlsp.impl.features.usages.LspSearchTargetsRule"/>',
+                IMPLEMENTATION_EXTENSIONS + '    <uiDataRule implementation="com.intellij.platform.dartlsp.impl.features.usages.LspSearchTargetsRule"/>')
+
+
+# Adapted upstream file bodies/snippets, not a new download/copy framework.
+# Provenance: JetBrains/intellij-community e6203b62fd594bbd976fc6fa990b6e634584e1b5 (IJPL-255205):
+# platform/lsp/src/api/customization/LspGoToImplementationCustomizer.kt
+# platform/lsp-impl/src/impl/features/navigation/LspGotoImplementation.kt
+# platform/lsp-impl/src/impl/LspRequestExecutor.kt and resources/intellij.platform.lsp.impl.xml
+# Local adaptations: isolated dartlsp namespace, LspServer naming/open-file manager,
+# descriptor.findFileByUri instead of dynamicFiles, existing synchronous coordinate/request helpers.
+IMPLEMENTATION_CUSTOMIZER = '''// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.platform.dartlsp.api.customization
+
+sealed class LspGoToImplementationCustomizer
+
+open class LspGoToImplementationSupport : LspGoToImplementationCustomizer()
+
+object LspGoToImplementationDisabled : LspGoToImplementationCustomizer()
+'''
+
+IMPLEMENTATION_CUSTOMIZATION = '''
+  /**
+   * Customizes Go to Implementation (`textDocument/implementation`).
+   * Return [LspGoToImplementationDisabled] to disable this feature.
+   * Backported from IJPL-255205 (e6203b62); remove after the upstream sync includes it.
+   */
+  open val goToImplementationCustomizer: LspGoToImplementationCustomizer = LspGoToImplementationSupport()
+'''
+
+IMPLEMENTATION_REQUEST = '''  // Backported from IJPL-255205 (e6203b62); remove after the upstream sync includes it.
+  @RequiresReadLock
+  @RequiresBackgroundThread
+  internal fun getImplementations(file: VirtualFile, offset: Int): List<LocationLink> {
+    return documentMapping.withDocumentAtFileOffset(file, offset) { lspDocument, position ->
+      val params = ImplementationParams(lspDocument.id, position)
+      val lsp4jResponse = sendRequestSync { it.textDocumentService.implementation(params) }
+                          ?: return@withDocumentAtFileOffset emptyList()
+      val locationLinks = lsp4jResponse.map({ items -> items.map { it.toLocationLink() } }, { it })
+      locationLinks.map { documentMapping.findDocumentByUrl(it.targetUri)?.mapLocationLink(it) ?: it }.distinct()
+    } ?: emptyList()
+  }
+
+'''
+
+IMPLEMENTATION_CAPABILITY = '''
+  // Backported from IJPL-255205 (e6203b62); remove after the upstream sync includes it.
+  internal fun supportsGotoImplementation(file: VirtualFile): Boolean =
+    serverCapabilities?.implementationProvider?.let { it.left ?: true }
+    ?: hasDynamicCapabilityToHandleThisFile(file, LspDynamicCapabilities.implementation)
+'''
+
+IMPLEMENTATION_EXTENSIONS = '''    <!-- IJPL-255205 (e6203b62): remove this backport after the upstream sync includes it. -->
+    <pom.declarationSearcher implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspImplementationDeclarationSearcher"/>
+    <definitionsScopedSearch implementation="com.intellij.platform.dartlsp.impl.features.navigation.LspDefinitionsScopedSearcher"/>
+'''
+
+GOTO_IMPLEMENTATION = '''// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.platform.dartlsp.impl.features.navigation
+
+import com.intellij.codeInsight.navigation.actions.GotoImplementationAction
+import com.intellij.ide.util.PsiNavigationSupport
+import com.intellij.injected.editor.VirtualFileWindow
+import com.intellij.openapi.actionSystem.IdeActions
+import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.application.QueryExecutorBase
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.util.TextRange
+import com.intellij.platform.dartlsp.api.customization.LspGoToImplementationSupport
+import com.intellij.platform.dartlsp.impl.LspServerManagerImpl
+import com.intellij.platform.dartlsp.util.getOffsetInDocument
+import com.intellij.pom.PomDeclarationSearcher
+import com.intellij.pom.PomNamedTarget
+import com.intellij.pom.PomTarget
+import com.intellij.pom.PomTargetPsiElement
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.impl.FakePsiElement
+import com.intellij.psi.search.LocalSearchScope
+import com.intellij.psi.search.PsiSearchScopeUtil
+import com.intellij.psi.search.searches.DefinitionsScopedSearch
+import com.intellij.util.Consumer
+import com.intellij.util.IconUtil
+import com.intellij.util.Processor
+import javax.swing.Icon
+
+// Backported from e6203b62fd594bbd976fc6fa990b6e634584e1b5 (IJPL-255205).
+// Adapted to the local LspServer manager and descriptor URI mapping; remove after the upstream sync includes it.
+/**
+ * The first half of the [Go To Implementation][GotoImplementationAction] feature for LSP-backed files.
+ *
+ * `GotoImplementationHandler` needs a non-null source element from `TargetElementUtil.findTargetElement()`.
+ * LSP-backed files usually have flat PSI without named elements or references, so the standard lookup finds nothing.
+ * This searcher runs inside `TargetElementUtilBase.getNamedElement()` and provides the source element:
+ * a [LspGotoImplementationTarget] that keeps the file and the caret offset.
+ * [LspDefinitionsScopedSearcher] then recognizes this target and asks the LSP server for the implementations.
+ *
+ * A `PomDeclarationSearcher` is used instead of a `TargetElementEvaluatorEx2` on purpose:
+ * all `PomDeclarationSearcher` extensions are iterated,
+ * while only one `TargetElementEvaluatorEx2` per language is ever consulted (see IJPL-189562).
+ */
+internal class LspImplementationDeclarationSearcher : PomDeclarationSearcher() {
+  override fun findDeclarationsAt(element: PsiElement, offsetInElement: Int, consumer: Consumer<in PomTarget>) {
+    // This function is called for many features that need a named element at the offset.
+    // We care only about the "Go To Implementation" action, which the thread context names.
+    if (!LspGotoImplementationTarget.isImplementationAction()) return
+
+    val psiFile = element.containingFile ?: return
+    val project = psiFile.project
+    if (project.isDefault) return
+    val file = psiFile.virtualFile ?: return
+    if (file is VirtualFileWindow) return
+
+    val hasSupportingServer = LspServerManagerImpl.getInstanceImpl(project).getServersWithThisFileOpen(file).any {
+      it.supportsGotoImplementation(file) &&
+      it.descriptor.lspCustomization.goToImplementationCustomizer is LspGoToImplementationSupport
+    }
+    if (!hasSupportingServer) return
+
+    consumer.consume(LspGotoImplementationTarget(psiFile, element.textRange.startOffset + offsetInElement))
+  }
+}
+
+
+/**
+ * The source element for the "Go To Implementation" action in an LSP-backed file.
+ * Keeps the caret offset because `DefinitionsScopedSearch.SearchParameters` transfers only an element.
+ *
+ * The target must not implement `PsiTarget`.
+ * For a `PsiTarget`, the platform `PomDefinitionSearch` reports the navigation element as an implementation.
+ * That self result would win over the LSP results.
+ */
+internal class LspGotoImplementationTarget(val psiFile: PsiFile, val offsetInFile: Int) : PomNamedTarget {
+  companion object {
+    // Dart adapter for IJPL-255205 (e6203b62): keep upstream action-context access in the copied feature.
+    // Remove with the rich-PSI adapter when platform lookup handles resolved references itself.
+    @JvmStatic
+    fun isImplementationAction(): Boolean =
+      ActionUtil.getActionThreadContext()?.actionId == IdeActions.ACTION_GOTO_IMPLEMENTATION
+  }
+
+  /**
+   * The word at the caret. The "Implementations of ..." popup title shows it.
+   */
+  override fun getName(): String = wordAt(psiFile, offsetInFile) ?: psiFile.name
+
+  override fun isValid(): Boolean = psiFile.isValid
+
+  override fun navigate(requestFocus: Boolean) {
+    val virtualFile = psiFile.virtualFile ?: return
+    PsiNavigationSupport.getInstance().createNavigatable(psiFile.project, virtualFile, offsetInFile).navigate(requestFocus)
+  }
+
+  override fun canNavigate(): Boolean = psiFile.virtualFile != null
+
+  override fun canNavigateToSource(): Boolean = canNavigate()
+
+  override fun equals(other: Any?): Boolean =
+    other is LspGotoImplementationTarget && other.psiFile == psiFile && other.offsetInFile == offsetInFile
+
+  override fun hashCode(): Int = 31 * psiFile.hashCode() + offsetInFile
+}
+
+
+/**
+ * An implementation found by the LSP server.
+ * A wrapper is needed because LSP-backed files usually have flat PSI:
+ * `psiFile.findElementAt()` returns the leaf that spans the whole file,
+ * so navigation to that leaf would put the caret at the file start.
+ * This element keeps the exact target offset, and navigation goes to it via [getTextOffset].
+ */
+internal class LspImplementationTargetElement(private val targetPsiFile: PsiFile, private val targetOffset: Int) : FakePsiElement() {
+  override fun getParent(): PsiElement = targetPsiFile
+  override fun getContainingFile(): PsiFile = targetPsiFile
+  override fun getTextOffset(): Int = targetOffset
+  override fun getTextRange(): TextRange = TextRange.from(targetOffset, 0)
+  override fun isValid(): Boolean = targetPsiFile.isValid
+  override fun getName(): String = wordAt(targetPsiFile, targetOffset) ?: targetPsiFile.name
+  override fun getLocationString(): String = targetPsiFile.name
+
+  /**
+   * The popup row icon. The LSP response has no symbol kind, so the target file icon is used.
+   * `ElementBase.getElementIcon()` reads this `ItemPresentation` icon and layers it.
+   */
+  override fun getIcon(open: Boolean): Icon? {
+    val virtualFile = targetPsiFile.virtualFile ?: return null
+    return IconUtil.computeFileIcon(virtualFile, 0, targetPsiFile.project)
+  }
+
+  override fun equals(other: Any?): Boolean =
+    other is LspImplementationTargetElement && other.targetPsiFile == targetPsiFile && other.targetOffset == targetOffset
+
+  override fun hashCode(): Int = 31 * targetPsiFile.hashCode() + targetOffset
+}
+
+
+/**
+ * Returns the word around the offset, or null when the offset does not touch a word.
+ */
+private fun wordAt(psiFile: PsiFile, offsetInFile: Int): String? {
+  val text = psiFile.virtualFile
+               ?.let { FileDocumentManager.getInstance().getCachedDocument(it) }
+               ?.charsSequence
+             ?: return null
+  var start = offsetInFile.coerceIn(0, text.length)
+  var end = start
+  while (start > 0 && Character.isJavaIdentifierPart(text[start - 1])) start--
+  while (end < text.length && Character.isJavaIdentifierPart(text[end])) end++
+  return if (start < end) text.subSequence(start, end).toString() else null
+}
+
+
+/**
+ * The second half of the [Go To Implementation][GotoImplementationAction] feature for LSP-backed files.
+ *
+ * Recognizes the [LspGotoImplementationTarget] source element that [LspImplementationDeclarationSearcher] provided.
+ * Sends the
+ * [textDocument/implementation](https://microsoft.github.io/language-server-protocol/specification/#textDocument_implementation)
+ * request and converts the response to PSI elements in the target files.
+ */
+internal class LspDefinitionsScopedSearcher : QueryExecutorBase<PsiElement, DefinitionsScopedSearch.SearchParameters>(true) {
+  override fun processQuery(queryParameters: DefinitionsScopedSearch.SearchParameters, consumer: Processor<in PsiElement>) {
+    val sourceElement = queryParameters.element as? PomTargetPsiElement ?: return
+    val target = sourceElement.target as? LspGotoImplementationTarget ?: return
+    val file = target.psiFile.virtualFile ?: return
+    val project = queryParameters.project
+    val scope = queryParameters.scope
+    val psiManager = PsiManager.getInstance(project)
+
+    for (lspServer in LspServerManagerImpl.getInstanceImpl(project).getServersWithThisFileOpen(file)) {
+      if (!lspServer.supportsGotoImplementation(file)) continue
+      if (lspServer.descriptor.lspCustomization.goToImplementationCustomizer !is LspGoToImplementationSupport) continue
+
+      val locationLinks = lspServer.requestExecutor.getImplementations(file, target.offsetInFile)
+      for (locationLink in locationLinks) {
+        val targetFile = lspServer.descriptor.findFileByUri(locationLink.targetUri) ?: continue
+        val targetPsiFile = psiManager.findFile(targetFile) ?: continue
+        val range = locationLink.targetSelectionRange ?: locationLink.targetRange
+        val targetElement = range
+                              ?.let { FileDocumentManager.getInstance().getDocument(targetFile) }
+                              ?.let { getOffsetInDocument(it, range.start) }
+                              ?.let { LspImplementationTargetElement(targetPsiFile, it) }
+                            ?: targetPsiFile
+        // Local scope needs the exact range: this synthetic element is parented to the file, not the declaration.
+        // Remove this local correction when the upstream implementation searcher enforces the requested scope.
+        val inScope = if (scope is LocalSearchScope) scope.containsRange(targetPsiFile, targetElement.textRange)
+                      else PsiSearchScopeUtil.isInScope(scope, targetElement)
+        if (inScope && !consumer.process(targetElement)) return
+      }
+    }
+  }
+}
+'''
 
 if __name__ == "__main__":
     main()

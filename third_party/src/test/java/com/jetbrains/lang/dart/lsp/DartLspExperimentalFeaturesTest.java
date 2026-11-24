@@ -80,6 +80,24 @@ public class DartLspExperimentalFeaturesTest extends CodeInsightFixtureTestCase 
       new LightVirtualFile("injected.dart", ""), false, true));
   }
 
+  public void testImplementationMethodAndDescriptorFollowFlagTransitions() {
+    final var method = LspMethod.valueOf("IMPLEMENTATION");
+    assertEquals("textDocument/implementation", method.getMethod());
+    assertEquals("implementation navigation", method.getPresentableName());
+    assertTrue(method.isExperimental());
+    assertTrue(LspMethod.Companion.getExperimentalFeatures().contains(method));
+    final var descriptor = new DartLspServerDescriptor(getProject());
+    for (boolean enabled : new boolean[]{true, false, true}) {
+      PropertiesComponent.getInstance(getProject()).setValue("dart.lsp.experimental.enabled", enabled, true);
+      final var customizer = descriptor.getLspCustomization().getGoToImplementationCustomizer();
+      if (enabled) {
+        assertTrue(customizer instanceof com.intellij.platform.dartlsp.api.customization.LspGoToImplementationSupport);
+      } else {
+        assertSame(com.intellij.platform.dartlsp.api.customization.LspGoToImplementationDisabled.INSTANCE, customizer);
+      }
+    }
+  }
+
   public void testLspMethodsExperimentalStatus() {
     assertFalse(LspMethod.CONNECT_TO_DTD.isExperimental());
     assertFalse(LspMethod.DIAGNOSTIC_SERVER.isExperimental());

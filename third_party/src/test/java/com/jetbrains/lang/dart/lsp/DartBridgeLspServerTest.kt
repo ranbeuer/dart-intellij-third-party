@@ -1788,8 +1788,53 @@ class DartBridgeLspServerTest : DartCodeInsightFixtureTestCase() {
         assertEquals("file://target.dart", result.right[0].targetUri)
     }
 
-    fun testImplementationEnabledPreservesLegacyHierarchy() {
-        checkImplementationRouting(true, 1)
+    fun testImplementationEnabledYieldsLegacyHierarchy() {
+        checkImplementationRouting(true, 0)
+    }
+
+    fun testImplementationCapability() {
+        assertEquals(true, bridgeServer.initialize(InitializeParams()).get(5, TimeUnit.SECONDS).capabilities.implementationProvider?.left)
+    }
+
+    fun testImplementationTransportNormalizesLocationListsAndNull() {
+        for (count in listOf(0, 1, 2, -1)) {
+            capturedRequests.clear()
+            val params = org.eclipse.lsp4j.ImplementationParams(TextDocumentIdentifier("file:///source.dart"), Position(2, 17))
+            val future = bridgeServer.implementation(params)
+            val sent = formattingRequestParams("textDocument/implementation")
+            assertEquals("file:///source.dart", sent.getAsJsonObject("textDocument").get("uri").asString)
+            assertEquals(JsonParser.parseString("""{"line":2,"character":17}"""), sent.get("position"))
+            val requestId = capturedRequests.single().get("id").asString
+            val location = """{"uri":"file:///target.dart","range":{"start":{"line":1,"character":7},"end":{"line":1,"character":13}}}"""
+            val payload = if (count < 0) "null" else (0 until count).joinToString(",", "[", "]") { location }
+            capturedListener.onResponse("""{"id":"$requestId","result":{"lspResponse":{"result":$payload}}}""")
+            val result = future.get(5, TimeUnit.SECONDS)
+            assertTrue(result.isLeft)
+            assertEquals(count.coerceAtLeast(0), result.left.size)
+            result.left.forEach {
+                assertEquals("file:///target.dart", it.uri)
+                assertEquals(Range(Position(1, 7), Position(1, 13)), it.range)
+            }
+            assertEquals(0, legacyHierarchyRequests)
+        }
+    }
+
+    fun testImplementationErrorsReachCallerWithoutLegacyFallback() {
+        for (code in listOf(-32601, -32603)) {
+            val future = bridgeServer.implementation(org.eclipse.lsp4j.ImplementationParams(
+                TextDocumentIdentifier("file:///source.dart"), Position(0, 6)))
+            val requestId = capturedRequests.last().get("id").asString
+            capturedListener.onResponse("""{"id":"$requestId","result":{"lspResponse":{"error":{"code":$code,"message":"Unavailable"}}}}""")
+            try {
+                future.get(5, TimeUnit.SECONDS)
+                fail("Implementation errors must reach the caller")
+            } catch (error: ExecutionException) {
+                val cause = error.cause as ResponseErrorException
+                assertEquals(code, cause.responseError.code)
+                assertEquals("Unavailable", cause.responseError.message)
+            }
+        }
+        assertEquals(0, legacyHierarchyRequests)
     }
 
     fun testImplementationDisabledPreservesLegacyHierarchy() {

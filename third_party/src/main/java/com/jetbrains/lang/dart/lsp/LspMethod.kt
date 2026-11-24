@@ -21,6 +21,7 @@ enum class LspMethod(
     FORMATTING("textDocument/formatting", isExperimental = true, presentableName = "formatting"),
     RANGE_FORMATTING("textDocument/rangeFormatting", isExperimental = true),
     HOVER("textDocument/hover", isExperimental = false),
+    IMPLEMENTATION("textDocument/implementation", isExperimental = true, presentableName = "implementation navigation"),
     PUBLISH_DIAGNOSTICS("textDocument/publishDiagnostics", isExperimental = true, presentableName = "errors and warnings"),
     INITIALIZE("initialize"),
     // Not gated by the experimental LSP flag because there is no fallback in legacy mode.
