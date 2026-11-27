@@ -15,12 +15,11 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsContexts.TabTitle;
-
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.ui.content.Content;
@@ -32,6 +31,7 @@ import com.intellij.util.concurrency.ThreadingAssertions;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.lang.dart.DartBundle;
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerMessages;
+import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import icons.DartIcons;
 import org.dartlang.analysis.server.protocol.AnalysisError;
 import org.jetbrains.annotations.NonNls;
@@ -179,6 +179,15 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
     return toolWindow;
   }
 
+  private void activateProblemsToolWindow() {
+    ToolWindow toolWindow = DartAnalysisServerService.isLspPublishDiagnosticsEnabled(myProject)
+                            ? ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROBLEMS_VIEW)
+                            : getDartAnalysisToolWindow();
+    if (toolWindow != null) {
+      toolWindow.activate(null);
+    }
+  }
+
   private @Nullable DartProblemsViewPanel getProblemsViewPanel() {
     ToolWindow toolWindow = getDartAnalysisToolWindow();
     Content content = toolWindow != null ? toolWindow.getContentManager().getContent(0) : null;
@@ -242,6 +251,11 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
     }
   }
 
+  @VisibleForTesting
+  public @Nullable Notification getNotification() {
+    return myNotification;
+  }
+
   private void showNotification(@NotNull NotificationType notificationType,
                                 @NotNull @NlsContexts.NotificationTitle String title,
                                 @Nullable @NlsContexts.NotificationContent String content,
@@ -252,20 +266,24 @@ public final class DartProblemsView implements PersistentStateComponent<DartProb
 
     if (myDisabledForSession) return;
 
+    // Legacy callers (such as flutter-intellij's LaunchState) may embed `<a href='open.dart.analysis'>...</a>`;
+    // strip the inline anchor tag so we rely solely on the native NotificationAction button below and avoid
+    // calling the deprecated Notification.setListener API (blocked by Plugin Verifier baselines).
+    final String sanitizedContent = content == null
+                                    ? ""
+                                    : content.replaceAll("<a\\s+href=['\"]open\\.dart\\.analysis['\"]>(.*?)</a>", "$1");
+
     final Notification notification = NotificationGroupManager.getInstance().getNotificationGroup("Dart Analysis")
-      .createNotification(title, StringUtil.notNullize(content), notificationType);
+      .createNotification(title, sanitizedContent, notificationType);
 
     if (addOpenAnalysisAction) {
-      notification.addAction(NotificationAction.createSimple(
-        DartBundle.message("notification.open.dart.analysis.action.text"),
-        () -> {
-          notification.expire();
-          ToolWindow toolWindow = getDartAnalysisToolWindow();
-          if (toolWindow != null) {
-            toolWindow.activate(null);
-          }
-        }
-      ));
+      String actionText = DartAnalysisServerService.isLspPublishDiagnosticsEnabled(myProject)
+                          ? DartBundle.message("notification.open.problems.action.text")
+                          : DartBundle.message("notification.open.dart.analysis.action.text");
+      notification.addAction(NotificationAction.createSimple(actionText, () -> {
+        notification.expire();
+        activateProblemsToolWindow();
+      }));
     }
 
     if (!terse) {

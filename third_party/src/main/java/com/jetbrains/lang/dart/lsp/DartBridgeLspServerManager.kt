@@ -19,6 +19,7 @@ import java.io.IOException
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Project-level service that manages the lifecycle of the LSP bridge server.
@@ -52,6 +53,26 @@ class DartBridgeLspServerManager(private val project: Project) : Disposable {
     fun isClientConnected(): Boolean = bridgeServer?.isClientConnected == true
     val isSemanticTokensAdvertised: Boolean
         get() = bridgeServer?.isSemanticTokensAdvertised == true
+
+    // Set when the bridge is restarted because the experimental LSP setting was toggled; consumed by the next
+    // `initialize` request from the JetBrains LSP client. See [requestReanalyzeOnNextClientInitialize].
+    private val reanalyzeOnNextClientInitialize = AtomicBoolean(false)
+
+    /**
+     * Must be called before restarting the bridge because the experimental LSP setting was toggled. Makes sure that the
+     * reconnected LSP client receives the current diagnostics.
+     *
+     * While the bridge is down, no [DartBridgeLspServer] is listening to DAS, so any `publishDiagnostics` notifications
+     * that DAS sends when its client capabilities change are dropped. DAS doesn't re-send unchanged diagnostics on its own,
+     * so without a re-analysis the editor would never get the LSP error highlighting (red underline) back.
+     */
+    fun requestReanalyzeOnNextClientInitialize() {
+        reanalyzeOnNextClientInitialize.set(true)
+    }
+
+    /** Returns whether a re-analysis was requested by [requestReanalyzeOnNextClientInitialize], and clears the request. */
+    fun consumeReanalyzeOnNextClientInitialize(): Boolean =
+        reanalyzeOnNextClientInitialize.getAndSet(false)
 
 
     fun startBridgeServer() {

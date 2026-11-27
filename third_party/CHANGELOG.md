@@ -17,6 +17,7 @@
 - Optimizing imports via LSP, also on save, before commit and in Reformat Code (experimental feature; requires Dart SDK 3.14.0-137.0.dev or newer) (#719)
 
 ### Changed
+- Routing pre-run execution error check and notification actions to the native Problems tool window when LSP is enabled (#27)
 - Resolving Dart directive file references locally instead of calling legacy `analysis.getNavigation` (#868)
 - Routing "Reformat Code with 'dart format'" (`Dart.DartStyle`) through LSP formatting via `ReformatCodeProcessor` when experimental LSP features are enabled (#850)
 - Call Hierarchy navigation via LSP is now enabled for all users (#846)

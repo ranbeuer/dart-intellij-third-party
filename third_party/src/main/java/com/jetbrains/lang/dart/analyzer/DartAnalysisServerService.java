@@ -2205,6 +2205,18 @@ public final class DartAnalysisServerService implements Disposable {
     ApplicationManager.getApplication().invokeLater(this::clearAllErrors, ModalityState.nonModal(), myDisposedCondition);
   }
 
+  /**
+   * Sends {@code analysis.reanalyze} to DAS without scheduling a deferred {@code ModalityState.nonModal()} {@link #clearAllErrors()}
+   * callback. Callers that run while a modal dialog (such as Settings) is open must clear stale error state synchronously beforehand;
+   * otherwise the deferred {@code clearAllErrors()} runs after the dialog closes and wipes diagnostics freshly published by the reanalysis.
+   */
+  public void requestReanalysisWithoutDeferredClear() {
+    final AnalysisServer server = myServer;
+    if (server != null) {
+      server.analysis_reanalyze();
+    }
+  }
+
   private void analysis_setPriorityFiles() {
     synchronized (myLock) {
       if (myServer == null) return;
@@ -2771,6 +2783,29 @@ public final class DartAnalysisServerService implements Disposable {
   public void updateClientCapabilities() {
     DartBridgeLspServerManager bridgeManager = myProject.getServiceIfCreated(DartBridgeLspServerManager.class);
     updateClientCapabilities(bridgeManager != null && bridgeManager.isClientConnected());
+  }
+
+  /**
+   * Must be called after the experimental LSP setting is toggled.
+   * <p>
+   * Error reporting switches between the legacy DAS path (rendered by {@code DartAnnotator}) and the LSP
+   * {@code publishDiagnostics} path (rendered by the LSP client). The server typically re-sends exactly the same errors after
+   * the switch, which {@link #processComputedErrors} would otherwise drop as duplicates, leaving the editor highlighting (and
+   * therefore the Problems tool window) stale. Forget the per-file error hashes so that the re-sent errors are
+   * processed again.
+   */
+  public void onExperimentalLspSettingChanged() {
+    synchronized (myFilePathToErrorsHash) {
+      myFilePathToErrorsHash.clear();
+    }
+    myServerData.clearErrors();
+  }
+
+  @VisibleForTesting
+  public boolean hasErrorsHashForFile(@NotNull String filePath) {
+    synchronized (myFilePathToErrorsHash) {
+      return myFilePathToErrorsHash.containsKey(filePath);
+    }
   }
 
   public void updateClientCapabilities(boolean supportsLspConfiguration) {

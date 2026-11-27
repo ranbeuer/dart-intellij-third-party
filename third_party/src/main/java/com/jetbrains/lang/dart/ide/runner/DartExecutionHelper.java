@@ -31,11 +31,20 @@ public final class DartExecutionHelper {
     GlobalSearchScope scope = getScopeOfFilesThatMayAffectExecution(project, launchFile);
     if (scope == null) return;
 
-    final DartProblemsView problemsView = DartProblemsView.getInstance(project);
-    if (!problemsView.hasErrorsInScope(scope)) return;
+    if (!hasErrors(project, scope)) return;
 
     // Show a notification on the dart analysis tool window.
+    final DartProblemsView problemsView = DartProblemsView.getInstance(project);
     problemsView.showErrorNotification("", message, icon, true);
+  }
+
+  @VisibleForTesting
+  static boolean hasErrors(final @NotNull Project project, final @NotNull GlobalSearchScope scope) {
+    // DartProblemsView is the single source of truth for errors across both LSP and legacy DAS modes: it is populated
+    // by DartLsp4jClient.publishDiagnostics() in LSP mode and by DartAnalysisServerService in legacy DAS mode.
+    // WolfTheProblemSolver must not be used here: it only knows about files that have been highlighted in an editor,
+    // and it goes stale when the experimental LSP setting is toggled and the server restarts.
+    return DartProblemsView.getInstance(project).hasErrorsInScope(scope);
   }
 
   public static void clearIssueNotifications(final @NotNull Project project) {

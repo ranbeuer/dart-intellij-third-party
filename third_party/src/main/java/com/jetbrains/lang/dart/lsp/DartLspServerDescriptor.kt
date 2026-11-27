@@ -5,11 +5,17 @@
  */
 package com.jetbrains.lang.dart.lsp
 
+import com.intellij.codeInspection.util.InspectionMessage
 import com.intellij.icons.AllIcons
+import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.io.OSAgnosticPathUtil
+import com.intellij.openapi.util.text.HtmlBuilder
+import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.platform.dartlsp.api.Lsp4jClient
@@ -72,8 +78,11 @@ import com.intellij.platform.dartlsp.api.customization.LspSignatureHelpDisabled
 import com.intellij.platform.dartlsp.api.customization.LspSignatureHelpSupport
 import com.intellij.platform.dartlsp.api.customization.LspTypeHierarchySupport
 import com.intellij.platform.dartlsp.api.customization.LspWorkspaceSymbolDisabled
+import com.intellij.platform.dartlsp.util.messageIfStringOrEmpty
 import com.intellij.psi.PsiFile
+import com.intellij.util.PathUtil
 import com.intellij.util.io.URLUtil
+import com.jetbrains.lang.dart.DartBundle
 import com.jetbrains.lang.dart.DartFileType
 import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService
 import com.jetbrains.lang.dart.highlight.DartSyntaxHighlighterColors
@@ -85,6 +94,7 @@ import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.ConfigurationItem
+import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.FileOperationsWorkspaceCapabilities
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.PublishDiagnosticsCapabilities
@@ -211,7 +221,7 @@ class DartLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             }
         override val diagnosticsCustomizer: LspDiagnosticsCustomizer
             get() = if (DartAnalysisServerService.isLspPublishDiagnosticsEnabled(project)) {
-                LspDiagnosticsSupport()
+                DartLspDiagnosticsSupport
             } else {
                 LspDiagnosticsDisabled
             }
@@ -287,6 +297,67 @@ private object DartLspFormattingSupport : LspFormattingSupport() {
         ideCanFormatThisFileItself: Boolean,
         serverExplicitlyWantsToFormatThisFile: Boolean
     ): Boolean = file.isInLocalFileSystem && file.extension.equals("dart", ignoreCase = true)
+}
+
+/**
+ * Customizes LSP diagnostics presentation so IntelliJ's native **Problems** tool window and editor hover tooltips
+ * match legacy Dart Analysis / `DartAnnotator` behavior:
+ * - Normalizes line breaks in [getMessage] to single spaces so the **Problems** tree displays both the problem
+ *   description and DAS's correction hint on one line instead of truncating at `\n` with `...` (which produced `....`).
+ * - Formats [getTooltip] as HTML with proper escaping, documentation links, related locations, and correction text.
+ * - Filters out `todo` diagnostics in [getHighlightSeverity] (handled by IntelliJ's native TODO index).
+ */
+object DartLspDiagnosticsSupport : LspDiagnosticsSupport() {
+    private val NEWLINE_SEQUENCE = Regex("(\\r?\\n)+")
+
+    override fun getHighlightSeverity(diagnostic: Diagnostic): HighlightSeverity? {
+        val codeStr = diagnostic.code?.let { if (it.isLeft) it.left else it.right?.toString() }
+        if (codeStr.equals("todo", ignoreCase = true)) return null
+        return super.getHighlightSeverity(diagnostic)
+    }
+
+    @InspectionMessage
+    override fun getMessage(diagnostic: Diagnostic): String =
+        diagnostic.messageIfStringOrEmpty.replace(NEWLINE_SEQUENCE, " ")
+
+    @NlsContexts.Tooltip
+    override fun getTooltip(diagnostic: Diagnostic): String {
+        val fullMessage = diagnostic.messageIfStringOrEmpty
+        val newlineIndex = fullMessage.indexOf('\n')
+        val problemMessage = if (newlineIndex >= 0) fullMessage.substring(0, newlineIndex).trimEnd('\r') else fullMessage
+        val correction = if (newlineIndex >= 0) fullMessage.substring(newlineIndex + 1).trim() else null
+
+        val htmlBuilder = HtmlBuilder().append(problemMessage)
+
+        val url = diagnostic.codeDescription?.href
+        if (!url.isNullOrEmpty()) {
+            htmlBuilder.append(" (").appendLink(url, DartBundle.message("error.doc.link")).append(")")
+        }
+
+        htmlBuilder.append(HtmlChunk.br())
+
+        val relatedInfo = diagnostic.relatedInformation
+        if (!relatedInfo.isNullOrEmpty()) {
+            val listBuilder = HtmlBuilder()
+            for (info in relatedInfo) {
+                val msg = info.message.trimEnd('.')
+                val fileName = PathUtil.getFileName(VfsUtilCore.urlToPath(info.location.uri))
+                val startLine = (info.location.range.start.line + 1).coerceAtLeast(1)
+                listBuilder.append(HtmlChunk.li().addText("$msg ($fileName:$startLine)."))
+            }
+            htmlBuilder.append(listBuilder.wrapWith("ul"))
+        }
+
+        if (!correction.isNullOrEmpty()) {
+            htmlBuilder.append(HtmlChunk.br())
+            correction.split(NEWLINE_SEQUENCE).forEachIndexed { index, line ->
+                if (index > 0) htmlBuilder.append(HtmlChunk.br())
+                htmlBuilder.append(line)
+            }
+        }
+
+        return htmlBuilder.wrapWith("html").toString()
+    }
 }
 
 object DartLspCodeActionsSupport : LspCodeActionsSupport() {
